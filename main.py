@@ -13,7 +13,7 @@ app = FastAPI()
 class ChatRequest(BaseModel):
     category: str
     topic: str
-    difficulty: int
+    difficulty: int # 1~10
     message: str
 
 @app.post("/chat")
@@ -28,7 +28,7 @@ async def chat_with_ai(request: ChatRequest):
         2. 답변은 반드시 아래의 JSON 형식으로만 해. 다른 말은 하지 마.
         {{
             "reply": "네가 학생으로서 할 말",
-            "score": 0~100 사이의 숫자,
+            "score": 0~100 사이의 숫자(난이도에 따라 점수주는 기준을 더 엄격하게),
             "is_finished": true/false (이해도가 100이면 true)
         }}
         """
