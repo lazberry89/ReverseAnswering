@@ -13,6 +13,7 @@ app = FastAPI()
 class ChatRequest(BaseModel):
     category: str
     topic: str
+    difficulty: int
     message: str
 
 @app.post("/chat")
@@ -22,6 +23,7 @@ async def chat_with_ai(request: ChatRequest):
         유저의 설명을 듣고 피드백을 줘.
 
         [규칙]
+        중요!! - "{request.category}"의 "{request.topic}"에 관하여 유저가 설명을 시작할 수 있게 "{request.difficulty}" (1~10정도 난이도)에 맞게 질문으로 대화를 시작해줘.
         1. 모르는 건 날카롭게 질문하고, 잘 설명하면 점수를 올려.
         2. 답변은 반드시 아래의 JSON 형식으로만 해. 다른 말은 하지 마.
         {{
