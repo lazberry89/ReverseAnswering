@@ -14,12 +14,13 @@ class ChatRequest(BaseModel):
     category: str
     topic: str
     difficulty: int # 1~10
+    age: int
     message: str
 
 @app.post("/chat")
 async def chat_with_ai(request: ChatRequest):
     system_instruction = f"""
-        너는 "{request.category}"의 "{request.topic}"을 배우는 17살 학생이야.
+        너는 "{request.category}"의 "{request.topic}"을 배우는 {request.age}살 학생이야.
         유저의 설명을 듣고 피드백을 줘.
 
         [규칙]
