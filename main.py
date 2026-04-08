@@ -1,228 +1,274 @@
 import os
 import json
-from fastapi import FastAPI, HTTPException
+import sqlite3
+import random
+import httpx
+import uvicorn
+from datetime import datetime
+from fastapi import FastAPI, HTTPException, Depends, Request
 from pydantic import BaseModel
 from typing import List, Optional
 from openai import OpenAI
 from dotenv import load_dotenv
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse, HTMLResponse
+from fastapi.staticfiles import StaticFiles
 
 load_dotenv()
 
-# ==========================================
-# 🤖 AI 클라이언트 설정
-# ==========================================
-groq_client = OpenAI(
-    api_key=os.getenv("GROQ_API_KEY"),
-    base_url="https://api.groq.com/openai/v1"
-)
-
-gemini_client = OpenAI(
-    api_key=os.getenv("GEMINI_API_KEY"),
-    base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
-)
+# AI 설정
+groq_client = OpenAI(api_key=os.getenv("GROQ_API_KEY"), base_url="https://api.groq.com/openai/v1")
+gemini_client = OpenAI(api_key=os.getenv("GEMINI_API_KEY"),
+                       base_url="https://generativelanguage.googleapis.com/v1beta/openai/")
 
 app = FastAPI()
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"],
+                   allow_headers=["*"])
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# ==========================================
-# 🗄️ 임시 DB
-# ==========================================
-db_users = {}
-db_profiles = {}
-db_community = []
-
-MAX_HISTORY = 10
-user_sessions = {}
+DB_PATH = "tutor.db"
 
 
-# ==========================================
-# 📦 데이터 모델
-# ==========================================
-class UserAuth(BaseModel):
+def init_db():
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute(
+        'CREATE TABLE IF NOT EXISTS users (user_id TEXT PRIMARY KEY, password TEXT, email TEXT, provider TEXT DEFAULT "local")')
+    c.execute('CREATE TABLE IF NOT EXISTS profiles (user_id TEXT PRIMARY KEY, age INTEGER, school TEXT)')
+    c.execute(
+        'CREATE TABLE IF NOT EXISTS chat_rooms (room_id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT, topic TEXT, category TEXT, created_at TEXT)')
+    c.execute(
+        'CREATE TABLE IF NOT EXISTS messages (msg_id INTEGER PRIMARY KEY AUTOINCREMENT, room_id INTEGER, role TEXT, content TEXT, score INTEGER, timestamp TEXT)')
+    # 🏆 커뮤니티 테이블 추가
+    c.execute(
+        'CREATE TABLE IF NOT EXISTS community (post_id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT, content TEXT, score INTEGER, timestamp TEXT)')
+    conn.commit()
+    conn.close()
+
+
+# 서버 시작 시 DB 초기화
+init_db()
+
+
+def get_db():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+class ChatRequest(BaseModel):
     user_id: str
-    password: str
-
-
-class UserProfile(BaseModel):
-    user_id: str
+    room_id: Optional[int] = None
+    category: str
+    topic: str
+    difficulty: int
     age: int
-    school: str
-
+    lang: str = "Korean"
+    model_type: str = "groq"
+    message: str
 
 class CommunityPost(BaseModel):
     user_id: str
     content: str
     score: int
 
-
-class ChatRequest(BaseModel):
-    user_id: str
-    category: str
-    topic: str
-    difficulty: int
-    age: int
-    lang: str
-    model_type: str = "groq"
-    message: str
-
-
-# ==========================================
-# 🚀 API 엔드포인트들
-# ==========================================
 @app.get("/")
-async def read_index():
-    return FileResponse('index.html')
+async def read_index(): return FileResponse('index.html')
 
 
-@app.post("/register")
-async def register(auth: UserAuth):
-    if auth.user_id in db_users:
-        raise HTTPException(status_code=400, detail="이미 존재하는 아이디입니다.")
-    db_users[auth.user_id] = auth.password
-    return {"message": "회원가입 성공!"}
+@app.get("/login")
+async def read_login(): return FileResponse('login.html')
 
 
-@app.post("/login")
-async def login(auth: UserAuth):
-    if auth.user_id not in db_users or db_users[auth.user_id] != auth.password:
-        raise HTTPException(status_code=401, detail="아이디나 비밀번호가 틀렸습니다.")
-    return {"message": "로그인 성공!", "user_id": auth.user_id}
+@app.get("/register")
+async def read_register(): return FileResponse('register.html')
 
 
-@app.post("/profile")
-async def save_profile(profile: UserProfile):
-    if profile.user_id not in db_users:
-        raise HTTPException(status_code=404, detail="가입되지 않은 유저입니다.")
-    db_profiles[profile.user_id] = {"age": profile.age, "school": profile.school}
-    return {"message": "프로필 저장 완료!", "data": db_profiles[profile.user_id]}
+app.mount("/static", StaticFiles(directory="."), name="static")
 
 
-@app.get("/profile/{user_id}")
-async def get_profile(user_id: str):
-    if user_id not in db_profiles:
-        raise HTTPException(status_code=404, detail="프로필이 없습니다.")
-    return db_profiles[user_id]
-
-
-@app.post("/community")
-async def create_post(post: CommunityPost):
-    db_community.insert(0, {"user_id": post.user_id, "content": post.content, "score": int(post.score)})
-    return {"message": "자랑글이 등록되었습니다!"}
-
-
-@app.get("/community")
-async def get_posts():
-    return {"posts": db_community}
-
-
-# ==========================================
-# 🚀 4. 역질문 AI 채팅 API
-# ==========================================
-@app.post("/chat")
-async def chat_with_ai(request: ChatRequest):
-    # 주제(Topic)가 바뀌었는지 확인하여 세션 강제 초기화
-    should_reset = False
-    if request.user_id in user_sessions:
-        if user_sessions[request.user_id].get("topic") != request.topic:
-            should_reset = True
-
-    if request.user_id not in user_sessions or should_reset:
-        system_instruction = f"""
-            너는 "{request.category}"의 "{request.topic}"을 배우는 {request.age}살 학생이야.
-            유저의 설명을 듣는 학생 입장에서 질문을 해야 돼.
-            [규칙]
-            - 언어는 "{request.lang}"을 기본으로 사용할 것(한자나 다른 언어로 깨지지 않도록 유의).
-            - 난이도 {request.difficulty}/10에 맞춰서 기초적인 질문부터 시작해.
-            - 직접 개념 설명을 하지 말고, 질문을 통해 유저의 설명을 유도해.
-            !!!절대 너가 원래의 AI어시스턴트의 역할이 되면 안돼. 무조건 넌 학생의 역할로, 질문과 반응만 해야돼.
-            - 답변은 반드시 아래 JSON 형식으로만 해.
-            [점수 산출 규칙 - 중요!!]
-            - 'score'는 유저의 현재 설명 수준에 대한 실시간 이해도 점수(0~100)이다.
-            - 유저가 핵심 개념을 잘 설명하면 점수를 올려라.
-            - 유저가 틀린 설명을 하거나, 횡설수설하거나, 중복된 내용을 반복하면 점수를 가차 없이 깎아라.
-            - 점수는 유저의 답변 질에 따라 유동적으로 오르락내리락할 수 있다.
-            - 최종적으로 모든 개념이 완벽히 설명되어 이해도가 100이 되면 'is_finished'를 true로 바꿔라.
-            {{
-                "reply": "학생으로서 할 말",
-                "score": 0~100,
-                "is_finished": true/false,
-                "hint": "유저가 설명을 어려워할 때 줄 수 있는 힌트 (없으면 빈칸)"
-            }}
-        """
-        user_sessions[request.user_id] = {
-            "messages": [{"role": "system", "content": system_instruction}],
-            "msg_count": 0,
-            "topic": request.topic
-        }
-
-    session = user_sessions[request.user_id]
-    session["msg_count"] += 1
-
-    if len(session["messages"]) > MAX_HISTORY:
-        session["messages"].pop(1)
-
-    user_msg = request.message
-    # 10번째 메시지마다 힌트 유도
-    should_show_hint = (session["msg_count"] % 10 == 0)
-    if should_show_hint:
-        user_msg += "\n(시스템: 유저가 설명을 어려워하고 있습니다. 다음 JSON 응답의 'hint' 필드에 구체적인 학습 힌트를 포함해주세요.)"
-
-    session["messages"].append({"role": "user", "content": user_msg})
-
-    if request.model_type == "gemini":
-        target_client = gemini_client
-        target_model = "gemini-2.5-flash" #모델명 절대 바꾸지 않기 AI추천 모델은 틀린버젼
-    else:
-        target_client = groq_client
-        target_model = "llama-3.3-70b-versatile"
-
+@app.post("/api/chat")
+async def chat_with_ai(req: ChatRequest):
+    db = get_db()
+    room_id = req.room_id
     try:
+        # 1. 방이 없으면 생성
+        if not room_id:
+            cursor = db.execute("INSERT INTO chat_rooms (user_id, topic, category, created_at) VALUES (?, ?, ?, ?)",
+                                (req.user_id, req.topic, req.category, datetime.now().isoformat()))
+            room_id = cursor.lastrowid
+            db.commit()
+
+        # 2. 히스토리 가져오기 (마지막 10개)
+        history_rows = db.execute("SELECT role, content FROM messages WHERE room_id=? ORDER BY timestamp DESC LIMIT 10",
+                                  (room_id,)).fetchall()
+
+        history = []
+        for row in reversed(history_rows):
+            content = row["content"]
+            if row["role"] == "assistant":
+                try:
+                    content = json.loads(content).get("reply", content)
+                except:
+                    pass
+            history.append({"role": row["role"], "content": content})
+
+        # 누적 점수 가져오기
+        last_score_row = db.execute(
+            "SELECT score FROM messages WHERE room_id=? AND role='assistant' ORDER BY timestamp DESC LIMIT 1",
+            (room_id,)).fetchone()
+        current_score = last_score_row["score"] if last_score_row else 0
+
+        # 시스템 프롬프트
+        system_instruction = f"""
+                너는 {req.category} {req.topic}을 배우는 {req.age}살 학생이야. {req.lang} 언어를 사용하여 말하도록해.
+                {req.difficulty}/10 에 맞는 난이도로 점수를 주면돼.
+                !!!넌 무조건 학생이야.유저는 선생님이고.넌 아무것도 모르는거고,유저가 알려주는 입장이야.
+                !!!그리고 내용이 틀렸더라도 절대 너가 알려주지마. 질문으로 유도해.
+                !!!유저가 질문했다고 해서 절대 알려주지마.넌 학생이야.AI어시스턴트가 아니라고
+                [중요: 누적 점수 규칙]
+                현재 유저의 누적 점수는 **{current_score}점**이야.
+                !!!누적점수는 음수가 될 수 없어.0점이라면 감점을 하지마.
+                - 설명이 아주 명쾌하고 이해가 잘 되면: +10~15점
+                - 설명이 맞긴 하지만 조금 부족하면: +3~5점
+                - 틀린 사실을 말하거나 횡설수설하면: -10~20점 차감
+                - 난이도({req.difficulty}/10)가 높을수록 오답 시 더 크게 차감해.
+        
+                !!! 점수 'score' 는 {current_score}에서 위 계산을 적용한 "결과값"을 숫자로만 적어.
+                !!! 점수 'score' 가 100이상이라면 'is_finished'를 true로 바꾸고, 마무리 멘트를 하도록 해.
+
+                반드시 다음 JSON 형식으로만 답해: 
+                {{"reply": "질문 내용", "score": 최종누적점수, "is_finished": true/false, "hint": "힌트"}}
+                """
+
+        messages = [{"role": "system", "content": system_instruction}]
+        messages.extend(history)
+        messages.append({"role": "user", "content": req.message})
+
+        target_client = gemini_client if req.model_type == "gemini" else groq_client
+        target_model = "gemini-2.0-flash" if req.model_type == "gemini" else "llama-3.3-70b-versatile"
+
         response = target_client.chat.completions.create(
             model=target_model,
             response_format={"type": "json_object"},
-            messages=session["messages"]
+            messages=messages
         )
-        ai_raw_response = response.choices[0].message.content
-        
-        # [추가] 응답이 bytes일 경우 utf-8 디코딩 처리
-        if isinstance(ai_raw_response, bytes):
-            ai_raw_response = ai_raw_response.decode('utf-8')
-            
-        session["messages"].append({"role": "assistant", "content": ai_raw_response})
 
-        result = json.loads(ai_raw_response)
+        ai_raw = response.choices[0].message.content
+        result = json.loads(ai_raw)
 
-        # 점수 처리 (실시간 점수 반영 및 0~100 제한)
-        try:
-            raw_score = int(result.get("score", 0))
-            result["score"] = max(0, min(100, raw_score))
-        except:
-            result["score"] = 0
-
-        result["show_hint_button"] = should_show_hint
-        result["hint"] = result.get("hint", "")
-
-        # 종료 처리
-        if result["score"] >= 100 or result.get("is_finished") is True:
+        # [보완] 점수 강제 가드 및 종료 조건 확인
+        final_score = result.get("score", 0)
+        # 점수가 100점 이상이면 무조건 종료로 간주
+        if final_score >= 100:
+            final_score = 100
             result["is_finished"] = True
+        elif final_score < 0:
+            final_score = 0
+            
+        result["score"] = final_score
 
+        # 5. DB 저장
+        now = datetime.now().isoformat()
+        db.execute("INSERT INTO messages (room_id, role, content, score, timestamp) VALUES (?, 'user', ?, 0, ?)",
+                   (room_id, req.message, now))
+        db.execute("INSERT INTO messages (room_id, role, content, score, timestamp) VALUES (?, 'assistant', ?, ?, ?)",
+                   (room_id, ai_raw, final_score, now))
+        db.commit()
+
+        result["room_id"] = room_id
         return result
+
     except Exception as e:
-        return {"reply": f"에러 발생: {str(e)}", "score": 0, "is_finished": False, "show_hint_button": False}
+        print(f"🔥 서버 에러 발생: {e}")
+        return JSONResponse(status_code=500, content={"reply": f"에러: {str(e)}", "score": 0})
+    finally:
+        db.close()
+
+@app.post("/api/login")
+async def login(auth: dict):
+    db = get_db()
+    user = db.execute("SELECT * FROM users WHERE (user_id=? OR email=?) AND provider='local'",
+                      (auth['user_id'], auth['user_id'])).fetchone()
+    db.close()
+    if not user or user["password"] != auth['password']: raise HTTPException(status_code=401,
+                                                                             detail="아이디/이메일 또는 비밀번호가 틀렸습니다.")
+    return {"user_id": user["user_id"]}
 
 
-@app.get("/reset/{user_id}")
-async def reset_session(user_id: str):
-    if user_id in user_sessions:
-        del user_sessions[user_id]
-        return {"message": "대화 세션이 초기화되었습니다."}
-    return {"message": "초기화할 세션이 없습니다."}
+@app.post("/api/register")
+async def register(auth: dict):
+    db = get_db()
+    try:
+        db.execute("INSERT INTO users (user_id, password, email, provider) VALUES (?, ?, ?, 'local')",
+                   (auth['user_id'], auth['password'], auth['email']))
+        db.commit()
+        return {"message": "성공"}
+    except:
+        raise HTTPException(status_code=400, detail="이미 사용 중인 아이디나 이메일입니다.")
+    finally:
+        db.close()
+
+
+@app.get("/api/history/{user_id}")
+async def get_history(user_id: str):
+    db = get_db()
+    rooms = db.execute("SELECT * FROM chat_rooms WHERE user_id=? ORDER BY created_at DESC", (user_id,)).fetchall()
+    db.close()
+    return [dict(r) for r in rooms]
+
+
+@app.get("/api/chat_data/{room_id}")
+async def get_chat_data(room_id: int):
+    db = get_db()
+    msgs = db.execute("SELECT role, content, score FROM messages WHERE room_id=? ORDER BY timestamp ASC",
+                      (room_id,)).fetchall()
+    db.close()
+    return [dict(m) for m in msgs]
+
+
+@app.post("/api/profile")
+async def save_profile(data: dict):
+    db = get_db()
+    db.execute("INSERT OR REPLACE INTO profiles VALUES (?, ?, ?)", (data["user_id"], data["age"], data["school"]))
+    db.commit()
+    db.close()
+    return {"message": "저장 완료"}
+
+
+@app.get("/api/profile/{user_id}")
+async def get_profile(user_id: str):
+    db = get_db()
+    p = db.execute("SELECT * FROM profiles WHERE user_id=?", (user_id,)).fetchone()
+    db.close()
+    return dict(p) if p else {"age": 17, "school": "미입력"}
+
+
+@app.delete("/api/chat/room/{room_id}")
+async def delete_room(room_id: int):
+    db = get_db()
+    db.execute("DELETE FROM messages WHERE room_id = ?", (room_id,))
+    db.execute("DELETE FROM chat_rooms WHERE room_id = ?", (room_id,))
+    db.commit()
+    db.close()
+    return {"message": "삭제 성공"}
+
+# 🚀 커뮤니티 API 추가
+@app.get("/api/community")
+async def get_community():
+    db = get_db()
+    posts = db.execute("SELECT * FROM community ORDER BY timestamp DESC").fetchall()
+    db.close()
+    return {"posts": [dict(p) for p in posts]}
+
+@app.post("/api/community")
+async def create_post(post: CommunityPost):
+    db = get_db()
+    db.execute("INSERT INTO community (user_id, content, score, timestamp) VALUES (?, ?, ?, ?)",
+               (post.user_id, post.content, post.score, datetime.now().isoformat()))
+    db.commit()
+    db.close()
+    return {"message": "등록 완료"}
+
+
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=8000)

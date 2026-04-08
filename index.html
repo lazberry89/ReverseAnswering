@@ -3,459 +3,176 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>역질문 AI 튜터 플랫폼</title>
+    <title>AI 튜터 - 스마트한 역질문 학습</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css">
-
-    <style>
-        :root {
-            --primary: #4a90e2;
-            --accent: #6c5ce7;
-            --glow: #a29bfe;
-            --bg: #f5f7fa;
-            --white: #ffffff;
-            --success: #2ecc71;
-            --danger: #e74c3c;
-            --current-theme: var(--primary);
-        }
-
-        body {
-            font-family: 'Pretendard', sans-serif;
-            background-color: var(--bg);
-            margin: 0;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-            overflow: hidden;
-            transition: background-color 0.5s ease;
-        }
-
-        /* 점수 변동 시 배경색 피드백 */
-        body.score-up { background-color: rgba(46, 204, 113, 0.15); }
-        body.score-down { background-color: rgba(231, 76, 60, 0.15); }
-
-        .aura-container {
-            display: none;
-            position: relative;
-            width: 100%;
-            max-width: 420px;
-            padding: 5px;
-            border-radius: 30px;
-            overflow: hidden;
-            box-shadow: 0 20px 50px rgba(74, 144, 226, 0.2);
-            transition: transform 0.3s ease;
-        }
-
-        #login-aura { display: block; }
-
-        .aura-container::before {
-            content: '';
-            position: absolute;
-            top: -60%; left: -60%;
-            width: 220%; height: 220%;
-            background: conic-gradient(from 0deg, transparent 0%, var(--current-theme) 20%, var(--glow) 40%, var(--accent) 60%, transparent 80%);
-            animation: rotateAura 3s linear infinite;
-            z-index: 0;
-        }
-
-        .screen {
-            position: relative;
-            width: 100%;
-            background: var(--white);
-            padding: 35px;
-            border-radius: 26px;
-            box-sizing: border-box;
-            z-index: 1;
-        }
-
-        @keyframes rotateAura { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
-
-        /* 게이지 바 스타일 */
-        .gauge-wrapper {
-            width: 100%;
-            height: 12px;
-            background: #edf2f7;
-            border-radius: 10px;
-            margin: 10px 0;
-            overflow: hidden;
-            position: relative;
-        }
-
-        .gauge-fill {
-            height: 100%;
-            width: 0%;
-            background: var(--primary);
-            transition: width 0.8s cubic-bezier(0.175, 0.885, 0.32, 1.275), background-color 0.3s ease;
-            position: relative;
-        }
-
-        .gauge-fill::after {
-            content: '';
-            position: absolute;
-            top: 0; left: 0; right: 0; bottom: 0;
-            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
-            animation: wave 2s infinite linear;
-        }
-
-        @keyframes wave { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
-
-        h2 { color: var(--primary); text-align: center; margin-top: 0; margin-bottom: 10px; font-weight: 800; }
-        p { text-align: center; color: #7f8c8d; font-size: 0.95rem; margin-bottom: 30px; line-height: 1.5; }
-
-        .input-wrap { margin-bottom: 20px; width: 100%; }
-        label { display: block; font-weight: 700; margin-bottom: 8px; font-size: 0.85rem; color: #2c3e50; }
-
-        input[type="text"], input[type="password"], input[type="number"], select {
-            width: 100%; padding: 15px; border: 1px solid #edf2f7; border-radius: 14px;
-            box-sizing: border-box; outline: none; background: #f8fafc; transition: 0.3s;
-        }
-
-        input[type="range"] {
-            -webkit-appearance: none; width: 100%; height: 10px; background: #edf2f7; border-radius: 10px; margin: 15px 0; cursor: pointer;
-        }
-        input[type="range"]::-webkit-slider-thumb {
-            -webkit-appearance: none; width: 22px; height: 22px; background: var(--primary); border-radius: 50%; border: 3px solid #fff; box-shadow: 0 2px 5px rgba(0,0,0,0.15);
-        }
-
-        button {
-            width: 100%; padding: 16px; border: none; border-radius: 14px; background: var(--primary);
-            color: white; font-weight: 800; font-size: 1rem; cursor: pointer; transition: 0.3s; margin-bottom: 8px;
-        }
-        button:hover { filter: brightness(1.1); transform: translateY(-2px); }
-        .btn-sub { background: #f1f5f9; color: #64748b; }
-
-        .chat-box {
-            background: #f8fafc; height: 300px; border-radius: 20px; padding: 20px;
-            overflow-y: auto; margin-bottom: 15px; display: flex; flex-direction: column; gap: 12px; border: 1px solid #f1f5f9;
-        }
-        .msg { padding: 12px 16px; border-radius: 18px; max-width: 85%; font-size: 0.95rem; line-height: 1.5; word-break: break-all; }
-        .ai-msg { background: #ffffff; align-self: flex-start; border-bottom-left-radius: 4px; color: #334155; box-shadow: 0 2px 5px rgba(0,0,0,0.03); }
-        .user-msg { background: var(--primary); color: white; align-self: flex-end; border-bottom-right-radius: 4px; }
-
-        .hint-box {
-            background: #fff9db; border: 1px solid #ffe066; padding: 12px; border-radius: 14px;
-            font-size: 0.85rem; color: #856404; margin-bottom: 12px; display: none; animation: fadeIn 0.3s ease;
-        }
-
-        .typing-indicator { display: none; align-self: flex-start; font-size: 0.8rem; color: #94a3b8; margin-bottom: 10px; padding-left: 5px; }
-
-        .score-container { text-align: center; margin-bottom: 15px; padding: 12px; background: #ebf4ff; border-radius: 15px; border: 1px solid #d1e9ff; }
-        #current-score { color: var(--accent); font-weight: 800; font-size: 1.2rem; }
-    </style>
+    <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
+    <div class="toast-container"></div>
 
-    <div id="login-aura" class="aura-container">
-        <div class="screen">
-            <h2>👋 환영합니다!</h2>
-            <p>배운 내용을 AI에게 설명하며<br>완벽히 내 것으로 만들어보세요.</p>
-            <div class="input-wrap">
-                <label>아이디</label>
-                <input type="text" id="login-id" placeholder="아이디를 입력하세요">
+    <!-- 📱 사이드바 -->
+    <div class="sidebar">
+        <div class="new-chat-btn" onclick="location.reload()">+ 새로운 대화</div>
+        <div style="font-size: 0.75rem; color: #64748b; margin-bottom: 12px; padding-left: 10px; font-weight: 700; letter-spacing: 0.5px;">최근 기록</div>
+        <div id="history-list" class="history-list"></div>
+
+        <div class="sidebar-footer">
+            <div class="profile-btn" onclick="showAuraScreen('profile-aura')">
+                <div style="width: 32px; height: 32px; background: var(--accent); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 0.8rem; color: white;">U</div>
+                <div id="sidebar-user-id" style="font-size: 0.9rem; font-weight: 600;">사용자</div>
             </div>
-            <div class="input-wrap">
-                <label>비밀번호</label>
-                <input type="password" id="login-pw" placeholder="비밀번호를 입력하세요">
-            </div>
-            <button id="btn-login">로그인</button>
-            <button id="btn-register" class="btn-sub">회원가입</button>
+            <div class="logout-text" onclick="logout()">🚪 로그아웃</div>
         </div>
     </div>
 
-    <div id="profile-aura" class="aura-container">
-        <div class="screen">
-            <h2>👤 프로필 설정</h2>
-            <div class="input-wrap">
-                <label>나이</label>
-                <input type="number" id="profile-age" placeholder="예: 18">
-            </div>
-            <div class="input-wrap">
-                <label>학교</label>
-                <input type="text" id="profile-school" placeholder="예: 부산고등학교">
-            </div>
-            <button id="btn-save-profile">저장하기</button>
-        </div>
-    </div>
+    <!-- 🖼️ 메인 컨텐츠 영역 -->
+    <div class="main-content">
 
-    <div id="main-menu-aura" class="aura-container">
-        <div class="screen">
-            <h2>🏠 메인 메뉴</h2>
-            <button id="btn-go-ai" style="background: var(--accent);">🎓 AI 튜터와 대화하기</button>
-            <button id="btn-go-community" class="btn-sub">🏆 성취 자랑 게시판</button>
-        </div>
-    </div>
+        <div id="aura-wrapper" class="aura-wrapper">
 
-    <div id="ai-setup-aura" class="aura-container">
-        <div class="screen">
-            <h2>⚙️ 학습 세팅</h2>
-            <div class="input-wrap">
-                <label>모델 선택</label>
-                <select id="ai-model">
-                    <option value="groq">Groq (Llama 3.3)</option>
-                    <option value="gemini">Gemini (2.5 Flash)</option>
-                </select>
-            </div>
-            <div class="input-wrap">
-                <label>카테고리</label>
-                <select id="ai-category">
-                    <option>국어</option><option>수학</option><option>과학</option><option>영어</option>
-                </select>
-            </div>
-            <div class="input-wrap">
-                <label>복습 주제</label>
-                <input type="text" id="ai-topic" placeholder="예: 광합성, 이차방정식">
-            </div>
-            <div class="input-wrap">
-                <label>난이도 설정: <span id="diff-value">5</span></label>
-                <input type="range" id="ai-difficulty" min="1" max="10" value="5" oninput="document.getElementById('diff-value').innerText=this.value">
-            </div>
-            <button id="btn-start-chat">🚀 학습 시작</button>
-            <button onclick="showAuraScreen('main-menu-aura')" class="btn-sub">뒤로가기</button>
-        </div>
-    </div>
-
-    <div id="chat-aura" class="aura-container">
-        <div class="screen">
-            <h2>💬 AI 대화방</h2>
-            <div class="score-container" id="score-box">
-                <strong>📈 이해도: </strong> <span id="current-score">0</span> / 100
-                <div class="gauge-wrapper">
-                    <div id="score-gauge" class="gauge-fill"></div>
+            <!-- 👤 프로필 설정 -->
+            <div id="profile-aura" class="aura-container" style="display: none;">
+                <div class="screen" style="text-align: center;">
+                    <h2 style="font-weight: 800; color: var(--primary);">👤 프로필 설정</h2>
+                    <p style="color: #64748b; margin-bottom: 25px;">내 정보를 업데이트하세요.</p>
+                    <div class="input-wrap">
+                        <label>나이</label>
+                        <input type="number" id="profile-age" placeholder="예: 18">
+                    </div>
+                    <div class="input-wrap">
+                        <label>학교</label>
+                        <input type="text" id="profile-school" placeholder="예: 부산고등학교">
+                    </div>
+                    <button onclick="saveProfile()">저장하기</button>
+                    <button onclick="showAuraScreen('main-menu-aura')" class="btn-sub" style="margin-top: 10px;">메인 메뉴로 돌아가기</button>
                 </div>
             </div>
-            <div id="hint-display" class="hint-box">💡 <b>힌트:</b> <span id="hint-text"></span></div>
-            <div id="chat-box" class="chat-box"></div>
-            <div id="typing-indicator" class="typing-indicator">AI 학생이 생각 중...</div>
-            <div style="display: flex; gap: 8px;">
-                <input type="text" id="chat-input" placeholder="설명해 주세요!">
-                <button id="btn-send-chat" style="width: 70px; background: var(--accent); margin-bottom: 0;">전송</button>
+
+            <!-- 🏠 메인 메뉴 화면 -->
+            <div id="main-menu-aura" class="aura-container" style="display: block;">
+                <div class="screen" style="text-align: center;">
+                    <h2 style="font-weight: 800; color: var(--primary);">메인 메뉴</h2>
+                    <p style="color: #64748b; margin-bottom: 25px;">어떤 기능을 사용하시겠어요?</p>
+                    <button onclick="showAuraScreen('ai-setup-aura')">🎓 AI 튜터 시작하기</button>
+                    <button onclick="showAuraScreen('community-aura')" class="btn-sub" style="margin-top: 10px;">🏆 자랑용 커뮤니티 보기</button>
+                </div>
             </div>
-            <button onclick="showAuraScreen('main-menu-aura')" class="btn-sub" style="margin-top: 15px;">종료</button>
+
+            <!-- 🎓 학습 주제 설정 -->
+            <div id="ai-setup-aura" class="aura-container" style="display: none;">
+                <div class="screen" style="text-align: center;">
+                    <h2>🎓 학습 시작</h2>
+                    <p>어떤 내용을 복습해볼까요?</p>
+                    <div class="input-wrap">
+                        <label>모델 선택</label>
+                        <select id="ai-model">
+                            <option value="groq">Groq (Llama 3.3)</option>
+                            <option value="gemini">Gemini (2.0 Flash)</option>
+                        </select>
+                    </div>
+                    <div class="input-wrap">
+                        <label>과목</label>
+                        <select id="ai-category">
+                            <option>국어</option><option>수학</option><option>과학</option><option>영어</option>
+                        </select>
+                    </div>
+                    <div class="input-wrap">
+                        <label>주제</label>
+                        <input type="text" id="ai-topic" placeholder="예: 광합성, 인수분해">
+                    </div>
+                    <div class="input-wrap">
+                        <label>난이도: <span id="diff-value">5</span></label>
+                        <input type="range" id="ai-difficulty" min="1" max="10" value="5" oninput="document.getElementById('diff-value').innerText=this.value">
+                    </div>
+                    <button onclick="startChat()">대화 시작하기 🚀</button>
+                    <button onclick="showAuraScreen('main-menu-aura')" class="btn-sub" style="margin-top: 10px;">메인 메뉴로 돌아가기</button>
+                </div>
+            </div>
+
+            <!-- 🏆 커뮤니티 화면 -->
+            <div id="community-aura" class="aura-container" style="display: none;">
+                <div class="screen" style="text-align: center;">
+                    <h2 style="font-weight: 800; color: var(--primary);">🏆 자랑 게시판</h2>
+                    <p style="color: #64748b; margin-bottom: 20px;">내 학습 결과를 친구들에게 자랑해보세요!</p>
+
+                    <div style="background: #f8fafc; padding: 15px; border-radius: 15px; margin-bottom: 20px; text-align: left;">
+                        <label style="margin-bottom: 5px; font-size: 0.8rem;">자랑할 내용</label>
+                        <input type="text" id="community-post-input" placeholder="예: 오늘 광합성 100점 맞았어요!" style="margin-bottom: 10px;">
+                        <button onclick="writeCommunityPost()" style="padding: 10px; font-size: 0.9rem;">글 올리기</button>
+                    </div>
+
+                    <div id="community-posts-list" style="text-align: left; max-height: 250px; overflow-y: auto; border: 1px solid #eee; padding: 15px; border-radius: 10px; background: white;">
+                        <p style="color: #94a3b8;">게시글을 불러오는 중...</p>
+                    </div>
+                    <button onclick="showAuraScreen('main-menu-aura')" class="btn-sub" style="margin-top: 20px;">메인 메뉴로 돌아가기</button>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- 💬 채팅 UI -->
+        <div id="chat-ui" style="display: none; height: 100%; width: 100%; flex-direction: column;">
+            <div id="chat-container" class="chat-container">
+                <div class="chat-header">
+                    <div style="display: flex; align-items: center; gap: 15px;">
+                        <!-- 뒤로가기 버튼 추가 -->
+                        <div class="back-btn" onclick="showAuraScreen('main-menu-aura')">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+                        </div>
+                        <h2 id="chat-title" style="margin:0; font-size: 1.5rem; font-weight: 800; color: #1e293b;">채팅</h2>
+                    </div>
+                    <div style="text-align: right;">
+                        <div style="font-size: 0.8rem; color: #64748b; margin-bottom: 4px;">학습 이해도</div>
+                        <div style="font-size: 1.2rem; font-weight: 800; color: var(--primary);"><span id="current-score">0</span>%</div>
+                        <div class="gauge-wrapper" style="width: 100px; margin-top: 5px;">
+                            <div id="score-gauge" class="gauge-fill"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="chat-box" class="chat-box"></div>
+                <div id="typing-indicator" style="display:none; color:#94a3b8; font-size:0.8rem; margin-top:20px;">AI가 생각 중...</div>
+            </div>
+
+            <!-- 💡 힌트 슬라이더 추가 -->
+            <div id="hint-slider" class="hint-slider">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <span style="font-size: 1.2rem;">💡</span>
+                    <span id="hint-text" style="font-size: 0.9rem; font-weight: 600; color: #856404;">힌트가 도착했습니다!</span>
+                </div>
+                <div onclick="hideHint()" style="cursor: pointer; padding: 5px;">×</div>
+            </div>
+
+            <div class="input-area">
+                <input type="text" id="chat-input" placeholder="여기에 내용을 설명해주세요..." onkeypress="if(event.key==='Enter') sendChat()">
+                <button class="send-btn" onclick="sendChat()">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                </button>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- 🖼️ 커스텀 확인 모달 -->
+    <div id="confirm-modal" class="modal-overlay">
+        <div class="modal-content">
+            <h3 style="margin-top: 0; color: #1e293b;">정말 삭제할까요?</h3>
+            <p style="color: #64748b; font-size: 0.9rem; margin-bottom: 25px;">삭제된 대화 기록은 복구할 수 없습니다.</p>
+            <div style="display: flex; gap: 10px;">
+                <button onclick="closeConfirmModal()" class="btn-sub" style="flex: 1; padding: 12px;">취소</button>
+                <button id="modal-confirm-btn" style="flex: 1; padding: 12px; background: var(--danger);">삭제</button>
+            </div>
         </div>
     </div>
 
-    <div id="community-aura" class="aura-container">
-        <div class="screen">
-            <h2>🏆 자랑 게시판</h2>
-            <div style="display: flex; gap: 8px; margin-bottom: 20px;">
-                <input type="text" id="post-content" placeholder="오늘의 성취는?">
-                <button id="btn-write-post" style="width: 70px; margin-bottom: 0;">글쓰기</button>
-            </div>
-            <div id="post-list" style="max-height: 250px; overflow-y: auto;"></div>
-            <button onclick="showAuraScreen('main-menu-aura')" class="btn-sub" style="margin-top: 20px;">홈으로</button>
-        </div>
-    </div>
-
+    <script src="/static/script.js"></script>
     <script>
-        const BASE_URL = "http://127.0.0.1:8000";
-        let currentUser = "";
-        let lastScore = 0;
-
-        function showAuraScreen(auraId) {
-            document.querySelectorAll('.aura-container').forEach(s => s.style.display = 'none');
-            const target = document.getElementById(auraId);
-            if(target) {
-                target.style.display = 'block';
-                target.querySelector('.screen').style.animation = 'fadeIn 0.5s ease-out';
-            }
-        }
-
-        // 회원가입
-        document.getElementById('btn-register').onclick = async () => {
-            const id = document.getElementById('login-id').value;
-            const pw = document.getElementById('login-pw').value;
-            if(!id || !pw) return alert("아이디와 비밀번호를 입력하세요.");
-            try {
-                const res = await fetch(`${BASE_URL}/register`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ user_id: id, password: pw })
-                });
-                const data = await res.json();
-                alert(data.message || data.detail);
-            } catch (e) { alert("서버 연결 실패"); }
-        };
-
-        // 로그인
-        document.getElementById('btn-login').onclick = async () => {
-            const id = document.getElementById('login-id').value;
-            const pw = document.getElementById('login-pw').value;
-            try {
-                const res = await fetch(`${BASE_URL}/login`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ user_id: id, password: pw })
-                });
-                const data = await res.json();
-                if (res.ok) {
-                    currentUser = data.user_id;
-                    showAuraScreen('profile-aura');
-                } else {
-                    alert(data.detail);
-                }
-            } catch (e) { alert("서버 연결 실패"); }
-        };
-
-        // 프로필 저장
-        document.getElementById('btn-save-profile').onclick = async () => {
-            const age = document.getElementById('profile-age').value;
-            const school = document.getElementById('profile-school').value;
-            await fetch(`${BASE_URL}/profile`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ user_id: currentUser, age: parseInt(age) || 17, school: school || "일반" })
-            });
+        if(!localStorage.getItem("user_id")) location.href = '/login';
+        else {
+            document.getElementById('sidebar-user-id').innerText = localStorage.getItem("user_id");
             showAuraScreen('main-menu-aura');
-        };
-
-        document.getElementById('btn-go-ai').onclick = () => showAuraScreen('ai-setup-aura');
-        document.getElementById('btn-go-community').onclick = () => { updateCommunity(); showAuraScreen('community-aura'); };
-
-        // 채팅 시작
-        document.getElementById('btn-start-chat').onclick = async () => {
-            const topic = document.getElementById('ai-topic').value;
-            if(!topic) return alert("주제를 입력해주세요!");
-
-            if (currentUser) await fetch(`${BASE_URL}/reset/${currentUser}`);
-
-            document.getElementById('chat-box').innerHTML = "";
-            document.getElementById('current-score').innerText = "0";
-            document.getElementById('score-gauge').style.width = "0%";
-            document.getElementById('hint-display').style.display = 'none';
-            lastScore = 0;
-
-            showAuraScreen('chat-aura');
-            addMessage("ai", `안녕하세요! 오늘은 '${topic}'에 대해 설명해주실 거죠? 준비됐어요!`);
-        };
-
-        document.getElementById('btn-send-chat').onclick = sendMessage;
-        document.getElementById('chat-input').onkeypress = (e) => { if(e.key === 'Enter') sendMessage(); };
-
-        // 메시지 전송 (main.py API 연동)
-        async function sendMessage() {
-            const input = document.getElementById('chat-input');
-            const message = input.value.trim();
-            if (!message) return;
-
-            addMessage("user", message);
-            input.value = "";
-
-            const indicator = document.getElementById('typing-indicator');
-            indicator.style.display = 'block';
-
-            try {
-                const res = await fetch(`${BASE_URL}/chat`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        user_id: currentUser || "guest",
-                        category: document.getElementById('ai-category').value,
-                        topic: document.getElementById('ai-topic').value,
-                        difficulty: parseInt(document.getElementById('ai-difficulty').value),
-                        age: 17, // 프로필 연동 가능
-                        lang: "Korean",
-                        model_type: document.getElementById('ai-model').value,
-                        message: message
-                    })
-                });
-
-                const data = await res.json();
-                indicator.style.display = 'none';
-
-                if (data.reply) {
-                    addMessage("ai", data.reply);
-                    updateScoreVisuals(data.score);
-
-                    // 힌트 처리 (10번째 메시지 등에서 hint가 올 때)
-                    if (data.hint && data.hint.trim() !== "") {
-                        document.getElementById('hint-text').innerText = data.hint;
-                        document.getElementById('hint-display').style.display = 'block';
-                    }
-
-                    if (data.is_finished) {
-                        alert("🎉 대단해요! 모든 개념을 완벽하게 이해했습니다!");
-                    }
-                }
-            } catch (e) {
-                indicator.style.display = 'none';
-                console.error("Chat Error:", e);
-            }
+            loadHistory();
         }
-
-        function addMessage(sender, text) {
-            const box = document.getElementById('chat-box');
-            const div = document.createElement('div');
-            div.className = `msg ${sender}-msg`;
-            div.innerText = text;
-            box.appendChild(div);
-            box.scrollTop = box.scrollHeight;
-        }
-
-        // 점수 시각화 및 배경 피드백
-        function updateScoreVisuals(target) {
-            const el = document.getElementById('current-score');
-            const gauge = document.getElementById('score-gauge');
-            const body = document.body;
-            const targetScore = Math.min(100, Math.max(0, target));
-
-            animateScoreText(el, parseInt(el.innerText) || 0, targetScore);
-            gauge.style.width = `${targetScore}%`;
-
-            if (targetScore > lastScore) {
-                body.classList.add('score-up');
-                gauge.style.backgroundColor = "var(--success)";
-                setTimeout(() => body.classList.remove('score-up'), 1000);
-            } else if (targetScore < lastScore) {
-                body.classList.add('score-down');
-                gauge.style.backgroundColor = "var(--danger)";
-                setTimeout(() => body.classList.remove('score-down'), 1000);
-            }
-
-            setTimeout(() => gauge.style.backgroundColor = "var(--primary)", 1000);
-            lastScore = targetScore;
-        }
-
-        function animateScoreText(el, start, end) {
-            let curr = start;
-            if (start === end) return;
-            const step = start < end ? 1 : -1;
-            const timer = setInterval(() => {
-                curr += step;
-                el.innerText = curr;
-                if (curr === end) clearInterval(timer);
-            }, 15);
-        }
-
-        // 커뮤니티 기능
-        async function updateCommunity() {
-            try {
-                const res = await fetch(`${BASE_URL}/community`);
-                const data = await res.json();
-                const list = document.getElementById('post-list');
-                list.innerHTML = "";
-                data.posts.forEach(p => {
-                    const d = document.createElement('div');
-                    d.style.padding = "10px";
-                    d.style.borderBottom = "1px solid #eee";
-                    d.innerHTML = `<strong>${p.user_id}</strong>: ${p.content} <span style="color:var(--accent)">(${p.score}점)</span>`;
-                    list.appendChild(d);
-                });
-            } catch(e) {}
-        }
-
-        document.getElementById('btn-write-post').onclick = async () => {
-            const content = document.getElementById('post-content').value;
-            const score = document.getElementById('current-score').innerText;
-            if (!content) return;
-            await fetch(`${BASE_URL}/community`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ user_id: currentUser || "익명", content: content, score: parseInt(score) })
-            });
-            document.getElementById('post-content').value = "";
-            updateCommunity();
-        };
     </script>
 </body>
 </html>
