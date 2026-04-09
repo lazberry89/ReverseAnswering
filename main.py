@@ -1,14 +1,13 @@
 import os
 import json
 import sqlite3
-import random
-import httpx
 import uvicorn
 from datetime import datetime
 from fastapi import FastAPI, HTTPException, Depends, Request
 from pydantic import BaseModel
 from typing import List, Optional
 from openai import OpenAI
+import ollama  # 🚀 Ollama 라이브러리 추가
 from dotenv import load_dotenv
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, HTMLResponse
@@ -16,10 +15,14 @@ from fastapi.staticfiles import StaticFiles
 
 load_dotenv()
 
-# AI 설정
+celebras_client = OpenAI(api_key=os.getenv("CELEBRAS_API_KEY"), base_url="https://api.cerebras.ai/v1")
 groq_client = OpenAI(api_key=os.getenv("GROQ_API_KEY"), base_url="https://api.groq.com/openai/v1")
 gemini_client = OpenAI(api_key=os.getenv("GEMINI_API_KEY"),
                        base_url="https://generativelanguage.googleapis.com/v1beta/openai/")
+openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+# 🚀 Ollama 클라이언트 세팅
+ollama_client = ollama.Client(host='http://aruru.kr:11434')
 
 app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"],
@@ -38,14 +41,12 @@ def init_db():
         'CREATE TABLE IF NOT EXISTS chat_rooms (room_id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT, topic TEXT, category TEXT, created_at TEXT)')
     c.execute(
         'CREATE TABLE IF NOT EXISTS messages (msg_id INTEGER PRIMARY KEY AUTOINCREMENT, room_id INTEGER, role TEXT, content TEXT, score INTEGER, timestamp TEXT)')
-    # 🏆 커뮤니티 테이블 추가
     c.execute(
         'CREATE TABLE IF NOT EXISTS community (post_id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT, content TEXT, score INTEGER, timestamp TEXT)')
     conn.commit()
     conn.close()
 
 
-# 서버 시작 시 DB 초기화
 init_db()
 
 
@@ -66,10 +67,12 @@ class ChatRequest(BaseModel):
     model_type: str = "groq"
     message: str
 
+
 class CommunityPost(BaseModel):
     user_id: str
     content: str
     score: int
+
 
 @app.get("/")
 async def read_index(): return FileResponse('index.html')
@@ -91,14 +94,12 @@ async def chat_with_ai(req: ChatRequest):
     db = get_db()
     room_id = req.room_id
     try:
-        # 1. 방이 없으면 생성
         if not room_id:
             cursor = db.execute("INSERT INTO chat_rooms (user_id, topic, category, created_at) VALUES (?, ?, ?, ?)",
                                 (req.user_id, req.topic, req.category, datetime.now().isoformat()))
             room_id = cursor.lastrowid
             db.commit()
 
-        # 2. 히스토리 가져오기 (마지막 10개)
         history_rows = db.execute("SELECT role, content FROM messages WHERE room_id=? ORDER BY timestamp DESC LIMIT 10",
                                   (room_id,)).fetchall()
 
@@ -112,13 +113,11 @@ async def chat_with_ai(req: ChatRequest):
                     pass
             history.append({"role": row["role"], "content": content})
 
-        # 누적 점수 가져오기
         last_score_row = db.execute(
             "SELECT score FROM messages WHERE room_id=? AND role='assistant' ORDER BY timestamp DESC LIMIT 1",
             (room_id,)).fetchone()
         current_score = last_score_row["score"] if last_score_row else 0
 
-        # 시스템 프롬프트
         system_instruction = f"""
                 너는 {req.category} {req.topic}을 배우는 {req.age}살 학생이야. {req.lang} 언어를 사용하여 말하도록해.
                 {req.difficulty}/10 에 맞는 난이도로 점수를 주면돼.
@@ -128,11 +127,12 @@ async def chat_with_ai(req: ChatRequest):
                 [중요: 누적 점수 규칙]
                 현재 유저의 누적 점수는 **{current_score}점**이야.
                 !!!누적점수는 음수가 될 수 없어.0점이라면 감점을 하지마.
-                - 설명이 아주 명쾌하고 이해가 잘 되면: +10~15점
+                - 설명이 정확하다면: +10~15점
                 - 설명이 맞긴 하지만 조금 부족하면: +3~5점
                 - 틀린 사실을 말하거나 횡설수설하면: -10~20점 차감
+                - 중복된 내용을 반복시 감점하기
                 - 난이도({req.difficulty}/10)가 높을수록 오답 시 더 크게 차감해.
-        
+
                 !!! 점수 'score' 는 {current_score}에서 위 계산을 적용한 "결과값"을 숫자로만 적어.
                 !!! 점수 'score' 가 100이상이라면 'is_finished'를 true로 바꾸고, 마무리 멘트를 하도록 해.
 
@@ -144,30 +144,95 @@ async def chat_with_ai(req: ChatRequest):
         messages.extend(history)
         messages.append({"role": "user", "content": req.message})
 
-        target_client = gemini_client if req.model_type == "gemini" else groq_client
-        target_model = "gemini-2.0-flash" if req.model_type == "gemini" else "llama-3.3-70b-versatile"
+        # 🚀 모델 선택 로직 (Ollama 방식 추가)
+        is_ollama = False
 
-        response = target_client.chat.completions.create(
-            model=target_model,
-            response_format={"type": "json_object"},
-            messages=messages
-        )
+        if req.model_type == "ollama":
+            is_ollama = True
+            target_model = "gpt-oss:20b"  # 요청하신 모델명
+        elif req.model_type == "groq":
+            target_client = groq_client
+            target_model = "llama-3.3-70b-versatile"
+        elif req.model_type == "gemini":
+            target_client = gemini_client
+            target_model = "gemini-2.0-flash"  # 아까 수정한 모델명 유지
+        elif req.model_type == "celebras":
+            target_client = celebras_client
+            target_model = "llama3.1-8b"
+        else:
+            target_client = groq_client
+            target_model = "llama-3.3-70b-versatile"
 
-        ai_raw = response.choices[0].message.content
+        # 🚀 API 호출 방식 분기 처리 (Ollama vs OpenAI)
+        if is_ollama:
+            response = ollama_client.chat(
+                model=target_model,
+                messages=messages,
+                format='json'  # JSON 강제 출력 옵션
+            )
+            ai_raw = response['message']['content']
+        else:
+            response = target_client.chat.completions.create(
+                model=target_model,
+                response_format={"type": "json_object"},
+                messages=messages
+            )
+            ai_raw = response.choices[0].message.content
+
         result = json.loads(ai_raw)
 
-        # [보완] 점수 강제 가드 및 종료 조건 확인
-        final_score = result.get("score", 0)
-        # 점수가 100점 이상이면 무조건 종료로 간주
+        try:
+            final_score = int(result.get("score", 0))
+        except (ValueError, TypeError):
+            final_score = 0
+
         if final_score >= 100:
             final_score = 100
             result["is_finished"] = True
+
+            try:
+                full_history_rows = db.execute(
+                    "SELECT role, content FROM messages WHERE room_id=? ORDER BY timestamp ASC", (room_id,)).fetchall()
+                full_chat_history = []
+                for row in full_history_rows:
+                    full_chat_history.append({"role": row["role"], "content": row["content"]})
+                full_chat_history.append({"role": "user", "content": req.message})
+
+                summary_prompt = f"""
+                유저가 {req.category}의 {req.topic}에 대해 학습을 완료했습니다.
+                다음 대화 내용을 바탕으로 유저가 어떤 개념을 어려워했는지 2~3가지 '부족한 개념'을 리스트로 요약해주세요.
+                또한, 해당 부족한 개념들을 보완할 수 있는 YouTube 강의 영상 2~3개를 추천해주세요.
+                각 추천 영상은 'title'과 'url'을 포함해야 합니다.
+
+                대화 내용: {json.dumps(full_chat_history, ensure_ascii=False)}
+
+                반드시 다음 JSON 형식으로만 답해주세요:
+                {{
+                    "weak_points": ["부족한 개념1", "부족한 개념2"],
+                    "youtube_recommendations": [
+                        {{"title": "유튜브 강의 제목1", "url": "유튜브 링크1"}},
+                        {{"title": "유튜브 강의 제목2", "url": "유튜브 링크2"}}
+                    ]
+                }}
+                """
+                summary_response = openai_client.chat.completions.create(
+                    model="gpt-3.5-turbo",
+                    response_format={"type": "json_object"},
+                    messages=[{"role": "system", "content": summary_prompt}]
+                )
+                summary_data = json.loads(summary_response.choices[0].message.content)
+                result["weak_points"] = summary_data.get("weak_points", [])
+                result["youtube_recommendations"] = summary_data.get("youtube_recommendations", [])
+            except Exception as summary_e:
+                print(f"Summary generation failed: {summary_e}")
+                result["weak_points"] = ["결과 요약 생성 중 오류가 발생했습니다."]
+                result["youtube_recommendations"] = []
+
         elif final_score < 0:
             final_score = 0
-            
+
         result["score"] = final_score
 
-        # 5. DB 저장
         now = datetime.now().isoformat()
         db.execute("INSERT INTO messages (room_id, role, content, score, timestamp) VALUES (?, 'user', ?, 0, ?)",
                    (room_id, req.message, now))
@@ -183,6 +248,7 @@ async def chat_with_ai(req: ChatRequest):
         return JSONResponse(status_code=500, content={"reply": f"에러: {str(e)}", "score": 0})
     finally:
         db.close()
+
 
 @app.post("/api/login")
 async def login(auth: dict):
@@ -252,13 +318,14 @@ async def delete_room(room_id: int):
     db.close()
     return {"message": "삭제 성공"}
 
-# 🚀 커뮤니티 API 추가
+
 @app.get("/api/community")
 async def get_community():
     db = get_db()
     posts = db.execute("SELECT * FROM community ORDER BY timestamp DESC").fetchall()
     db.close()
     return {"posts": [dict(p) for p in posts]}
+
 
 @app.post("/api/community")
 async def create_post(post: CommunityPost):

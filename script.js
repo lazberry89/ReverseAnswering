@@ -54,6 +54,13 @@ function showAuraScreen(id) {
     if (id === 'community-aura') {
         loadCommunityPosts();
     }
+    // AI 설정 화면일 경우 드롭다운 메뉴에 현재 선택된 모델 반영
+    else if (id === 'ai-setup-aura') {
+        const aiModelSelect = document.getElementById('ai-model');
+        if (aiModelSelect) {
+            aiModelSelect.value = selectedModel; // 현재 selectedModel 값으로 드롭다운 설정
+        }
+    }
     // 채팅 화면이 아닐 때는 힌트 숨김
     hideHint();
 }
