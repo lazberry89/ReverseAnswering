@@ -7,7 +7,7 @@ from fastapi import FastAPI, HTTPException, Depends, Request
 from pydantic import BaseModel
 from typing import List, Optional
 from openai import OpenAI
-import ollama  # 🚀 Ollama 라이브러리 추가
+from openrouter import OpenRouter
 from dotenv import load_dotenv
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, HTMLResponse
@@ -15,14 +15,15 @@ from fastapi.staticfiles import StaticFiles
 
 load_dotenv()
 
-celebras_client = OpenAI(api_key=os.getenv("CELEBRAS_API_KEY"), base_url="https://api.cerebras.ai/v1")
+
 groq_client = OpenAI(api_key=os.getenv("GROQ_API_KEY"), base_url="https://api.groq.com/openai/v1")
+groq_model = "llama-3.3-70b-versatile"
 gemini_client = OpenAI(api_key=os.getenv("GEMINI_API_KEY"),
                        base_url="https://generativelanguage.googleapis.com/v1beta/openai/")
-openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+gemini_model = "gemini-2.5-flash"
+openrouter_client = OpenAI(api_key=os.getenv("OR_API_KEY"), base_url="https://openrouter.ai/api/v1")
+openrouter_model = "openai/gpt-oss-120b:free"
 
-# 🚀 Ollama 클라이언트 세팅
-ollama_client = ollama.Client(host='http://aruru.kr:11434')
 
 app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"],
@@ -64,7 +65,7 @@ class ChatRequest(BaseModel):
     difficulty: int
     age: int
     lang: str = "Korean"
-    model_type: str = "groq"
+    model_type: str = "openrouter"
     message: str
 
 
@@ -119,65 +120,56 @@ async def chat_with_ai(req: ChatRequest):
         current_score = last_score_row["score"] if last_score_row else 0
 
         system_instruction = f"""
-                너는 {req.category} {req.topic}을 배우는 {req.age}살 학생이야. {req.lang} 언어를 사용하여 말하도록해.
-                {req.difficulty}/10 에 맞는 난이도로 점수를 주면돼.
-                !!!넌 무조건 학생이야.유저는 선생님이고.넌 아무것도 모르는거고,유저가 알려주는 입장이야.
-                !!!그리고 내용이 틀렸더라도 절대 너가 알려주지마. 질문으로 유도해.
-                !!!유저가 질문했다고 해서 절대 알려주지마.넌 학생이야.AI어시스턴트가 아니라고
-                [중요: 누적 점수 규칙]
-                현재 유저의 누적 점수는 **{current_score}점**이야.
-                !!!누적점수는 음수가 될 수 없어.0점이라면 감점을 하지마.
-                - 설명이 정확하다면: +10~15점
-                - 설명이 맞긴 하지만 조금 부족하면: +3~5점
-                - 틀린 사실을 말하거나 횡설수설하면: -10~20점 차감
-                - 중복된 내용을 반복시 감점하기
-                - 난이도({req.difficulty}/10)가 높을수록 오답 시 더 크게 차감해.
+                        [역할 설정]
+                        너는 두 가지 역할을 동시에 수행해야 해.
+                        1. 대화(reply) 생성 시: {req.category} {req.topic}을 배우는 {req.age}살 학생. 아무것도 모르는 척하며 유저(선생님)에게 계속 질문하고 유도해. (절대 먼저 정답을 알려주지 마!)
+                        2. 한국의 {req.age}살 교육과정을 조사하고 {req.difficulty}에 비례하게 질문을 해.
+                        3. 점수(score) 계산 시: 유저의 설명이 개념적으로 맞는지 평가하는 '비밀 채점자'.
 
-                !!! 점수 'score' 는 {current_score}에서 위 계산을 적용한 "결과값"을 숫자로만 적어.
-                !!! 점수 'score' 가 100이상이라면 'is_finished'를 true로 바꾸고, 마무리 멘트를 하도록 해.
+                        [점수 평가 규칙 (비밀 채점자로서)]
+                        현재 유저의 누적 점수는 **{current_score}점**이야.
+                        유저의 최신 답변을 바탕으로 아래 기준에 따라 점수를 가감해서 '최종 결과값'만 계산해.
+                        - 완벽하고 정확한 설명: +15점
+                        - 방향은 맞지만 설명이 부족함: +5점
+                        - 틀린 개념, 횡설수설, 단순 인사: -10점 (난이도 {req.difficulty}/10을 고려해 엄격하게 판단)
+                        !!!동일한 설명을 반복함: -5점
+                        *주의: 누적 점수는 0점 미만으로 내려갈 수 없어. 계산 결과가 음수면 0으로 맞춰.점수는 누적점수야.
 
-                반드시 다음 JSON 형식으로만 답해: 
-                {{"reply": "질문 내용", "score": 최종누적점수, "is_finished": true/false, "hint": "힌트"}}
-                """
+                        [시스템 상태]
+                        계산된 최종 점수가 100점 이상이면 'is_finished'를 true로 설정하고, 'reply'에 학습을 완료했다는 기쁜 마무리 멘트를 작성해.
+
+                        반드시 아래 JSON 형식으로만 답해:
+                        {{
+                            "reply": "학생으로서 할 말 (질문이나 반응)",
+                            "score": 00, // (여기에 {current_score}에서 가감된 최종 계산된 숫자만 입력)
+                            "is_finished": false, // 또는 true
+                            "hint": "선생님이 더 잘 설명할 수 있도록 줄 수 있는 작은 팁"
+                        }}
+                        """
 
         messages = [{"role": "system", "content": system_instruction}]
         messages.extend(history)
         messages.append({"role": "user", "content": req.message})
 
-        # 🚀 모델 선택 로직 (Ollama 방식 추가)
-        is_ollama = False
+        if req.model_type == "openrouter":
+            target_client = openrouter_client
+            target_model = openrouter_model
 
-        if req.model_type == "ollama":
-            is_ollama = True
-            target_model = "gpt-oss:20b"  # 요청하신 모델명
         elif req.model_type == "groq":
             target_client = groq_client
-            target_model = "llama-3.3-70b-versatile"
-        elif req.model_type == "gemini":
-            target_client = gemini_client
-            target_model = "gemini-2.0-flash"  # 아까 수정한 모델명 유지
-        elif req.model_type == "celebras":
-            target_client = celebras_client
-            target_model = "llama3.1-8b"
-        else:
-            target_client = groq_client
-            target_model = "llama-3.3-70b-versatile"
+            target_model = groq_model
 
-        # 🚀 API 호출 방식 분기 처리 (Ollama vs OpenAI)
-        if is_ollama:
-            response = ollama_client.chat(
-                model=target_model,
-                messages=messages,
-                format='json'  # JSON 강제 출력 옵션
-            )
-            ai_raw = response['message']['content']
         else:
-            response = target_client.chat.completions.create(
-                model=target_model,
-                response_format={"type": "json_object"},
-                messages=messages
-            )
-            ai_raw = response.choices[0].message.content
+            target_client = gemini_client
+            target_model = gemini_model
+
+
+        response = target_client.chat.completions.create(
+            model=target_model,
+            response_format={"type": "json_object"},
+            messages=messages
+        )
+        ai_raw = response.choices[0].message.content
 
         result = json.loads(ai_raw)
 
@@ -215,8 +207,8 @@ async def chat_with_ai(req: ChatRequest):
                     ]
                 }}
                 """
-                summary_response = openai_client.chat.completions.create(
-                    model="gpt-3.5-turbo",
+                summary_response = openrouter_client.chat.completions.create(
+                    model=openrouter_model,
                     response_format={"type": "json_object"},
                     messages=[{"role": "system", "content": summary_prompt}]
                 )
