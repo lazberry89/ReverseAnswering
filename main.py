@@ -155,7 +155,7 @@ async def chat_with_ai(req: ChatRequest):
             target_model = "llama-3.3-70b-versatile"
         elif req.model_type == "gemini":
             target_client = gemini_client
-            target_model = "gemini-2.0-flash"  # 아까 수정한 모델명 유지
+            target_model = "gemini-2.5-flash"  # 아까 수정한 모델명 유지
         elif req.model_type == "celebras":
             target_client = celebras_client
             target_model = "llama3.1-8b"
