@@ -123,7 +123,7 @@ async def chat_with_ai(req: ChatRequest):
                         [역할 설정]
                         너는 두 가지 역할을 동시에 수행해야 해.
                         1. 대화(reply) 생성 시: {req.category} {req.topic}을 배우는 {req.age}살 학생. 아무것도 모르는 척하며 유저(선생님)에게 계속 질문하고 유도해. (절대 먼저 정답을 알려주지 마!)
-                        2. 한국의 {req.age}살 교육과정을 조사하고 {req.difficulty}에 비례하게 질문을 해.
+                        2. 한국의 {req.age}살 교육과정을 조사하고({req.topic}에 관련되어야됨) {req.difficulty}에 비례하게 질문을 해.
                         3. 점수(score) 계산 시: 유저의 설명이 개념적으로 맞는지 평가하는 '비밀 채점자'.
 
                         [점수 평가 규칙 (비밀 채점자로서)]
