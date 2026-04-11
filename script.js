@@ -3,9 +3,16 @@ let currentUser = localStorage.getItem("user_id") || "";
 let currentRoomId = null;
 let lastScore = 0;
 let selectedModel = "groq";
-let userProfileAge = 17; // 유저 나이 전역 변수
+let userProfileAge = 17;
+let isCompetitionMode = false;
+let currentProblem = "";
+let currentLiveRoomCode = null;
+let liveStatusInterval = null;
+let isHost = false;
 
-function showToast(msg, type="info") {
+// --- 공통 UI 로직 ---
+
+function showToast(msg, type = "info") {
     let container = document.querySelector(".toast-container");
     if (!container) {
         container = document.createElement("div");
@@ -16,23 +23,19 @@ function showToast(msg, type="info") {
     toast.className = `toast ${type}`;
     toast.innerText = msg;
     container.appendChild(toast);
-    setTimeout(() => { toast.style.animation = "fadeOut 0.5s forwards"; setTimeout(() => toast.remove(), 500); }, 3000);
+    setTimeout(() => {
+        toast.style.animation = "fadeOut 0.5s forwards";
+        setTimeout(() => toast.remove(), 500);
+    }, 3000);
 }
 
-// 🖼️ 커스텀 컨펌 모달 로직
 function openConfirmModal(onConfirm) {
     const modal = document.getElementById('confirm-modal');
     const confirmBtn = document.getElementById('modal-confirm-btn');
     modal.style.display = 'flex';
-
-    // 버튼 클릭 이벤트 바인딩 (이전 이벤트 제거를 위해 클론 사용)
     const newBtn = confirmBtn.cloneNode(true);
     confirmBtn.parentNode.replaceChild(newBtn, confirmBtn);
-
-    newBtn.onclick = () => {
-        onConfirm();
-        closeConfirmModal();
-    };
+    newBtn.onclick = () => { onConfirm(); closeConfirmModal(); };
 }
 
 function closeConfirmModal() {
@@ -42,26 +45,14 @@ function closeConfirmModal() {
 function showAuraScreen(id) {
     document.getElementById('aura-wrapper').style.display = 'flex';
     document.getElementById('chat-ui').style.display = 'none';
-
-    // 모든 아우라 컨테이너 숨기기
     document.querySelectorAll('.aura-container').forEach(c => c.style.display = 'none');
-
-    // 선택된 화면 보여주기
     const target = document.getElementById(id);
-    if(target) target.style.display = 'block';
-
-    // 커뮤니티 화면일 경우 게시글 로드
-    if (id === 'community-aura') {
-        loadCommunityPosts();
-    }
-    // AI 설정 화면일 경우 드롭다운 메뉴에 현재 선택된 모델 반영
+    if (target) target.style.display = 'block';
+    if (id === 'community-aura') loadCommunityPosts();
     else if (id === 'ai-setup-aura') {
         const aiModelSelect = document.getElementById('ai-model');
-        if (aiModelSelect) {
-            aiModelSelect.value = selectedModel; // 현재 selectedModel 값으로 드롭다운 설정
-        }
+        if (aiModelSelect) aiModelSelect.value = selectedModel;
     }
-    // 채팅 화면이 아닐 때는 힌트 숨김
     hideHint();
 }
 
@@ -72,9 +63,10 @@ function showChatUI() {
 
 function logout() {
     localStorage.removeItem("user_id");
-    localStorage.removeItem("user_age");
     location.href = '/login';
 }
+
+// --- 프로필 & 히스토리 로직 ---
 
 async function fetchUserProfile() {
     try {
@@ -84,6 +76,8 @@ async function fetchUserProfile() {
             userProfileAge = data.age || 17;
             document.getElementById('profile-age').value = data.age || "";
             document.getElementById('profile-school').value = data.school || "";
+            const liveAgeInput = document.getElementById('live-comp-age');
+            if (liveAgeInput) liveAgeInput.value = userProfileAge;
         }
     } catch (e) { console.error("Profile load failed", e); }
 }
@@ -91,13 +85,11 @@ async function fetchUserProfile() {
 async function saveProfile() {
     const age = parseInt(document.getElementById('profile-age').value) || 17;
     const school = document.getElementById('profile-school').value || "일반";
-
     await fetch(`${API_PREFIX}/profile`, {
         method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({user_id: currentUser, age, school})
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_id: currentUser, age, school })
     });
-
     userProfileAge = age;
     showToast("프로필이 저장되었습니다!", "success");
     showAuraScreen('main-menu-aura');
@@ -129,7 +121,6 @@ async function loadHistory() {
             e.stopPropagation();
             openConfirmModal(() => deleteHistory(r.room_id));
         };
-
         itemWrap.appendChild(div);
         itemWrap.appendChild(delBtn);
         list.appendChild(itemWrap);
@@ -139,23 +130,18 @@ async function loadHistory() {
 async function deleteHistory(roomId) {
     try {
         const res = await fetch(`${API_PREFIX}/chat/room/${roomId}`, { method: 'DELETE' });
-        if(res.ok) {
+        if (res.ok) {
             showToast("대화 기록이 삭제되었습니다.");
-            if(currentRoomId == roomId) {
-                location.reload();
-            } else {
-                loadHistory();
-            }
-        } else {
-            showToast("삭제할 수 없습니다.", "error");
+            if (currentRoomId == roomId) location.reload();
+            else loadHistory();
         }
-    } catch(e) {
-        console.error(e);
-        showToast("서버 오류가 발생했습니다.", "error");
-    }
+    } catch (e) { showToast("서버 오류가 발생했습니다.", "error"); }
 }
 
+// --- 채팅 & 경진대회 핵심 로직 ---
+
 async function loadChatData(roomId, topic) {
+    isCompetitionMode = false;
     currentRoomId = roomId;
     const res = await fetch(`${API_PREFIX}/chat_data/${roomId}`);
     const msgs = await res.json();
@@ -164,8 +150,8 @@ async function loadChatData(roomId, topic) {
     let finalScore = 0;
     msgs.forEach(m => {
         let text = m.content;
-        if(m.role === 'assistant') {
-            try { const parsed = JSON.parse(m.content); text = parsed.reply; finalScore = m.score; } catch(e) {}
+        if (m.role === 'assistant') {
+            try { const parsed = JSON.parse(m.content); text = parsed.reply; finalScore = m.score; } catch (e) { }
         }
         addMessage(m.role === 'user' ? 'user' : 'ai', text);
     });
@@ -175,8 +161,9 @@ async function loadChatData(roomId, topic) {
 }
 
 function startChat() {
+    isCompetitionMode = false;
     const topic = document.getElementById('ai-topic').value;
-    if(!topic) return showToast("주제를 입력하세요!", "error");
+    if (!topic) return showToast("주제를 입력하세요!", "error");
     selectedModel = document.getElementById('ai-model').value;
     currentRoomId = null;
     document.getElementById('chat-box').innerHTML = "";
@@ -189,59 +176,129 @@ function startChat() {
 async function sendChat() {
     const input = document.getElementById('chat-input');
     const message = input.value.trim();
-    if(!message) return;
+    if (!message) return;
 
     addMessage('user', message, true);
     input.value = "";
     document.getElementById('typing-indicator').style.display = 'block';
-    hideHint(); // 유저가 전송하면 힌트 숨김
+    hideHint();
 
-    try {
-        const res = await fetch(`${API_PREFIX}/chat`, {
-            method: "POST",
-            headers: {"Content-Type": "application/json"},
-            body: JSON.stringify({
-                user_id: currentUser,
-                room_id: currentRoomId,
-                category: document.getElementById('ai-category').value,
-                topic: document.getElementById('chat-title').innerText,
-                difficulty: parseInt(document.getElementById('ai-difficulty').value),
-                age: userProfileAge,
-                lang: "Korean",
-                model_type: selectedModel,
-                message: message
-            })
-        });
-        const data = await res.json();
-        document.getElementById('typing-indicator').style.display = 'none';
-        if(data.reply) {
-            currentRoomId = data.room_id;
-            addMessage('ai', data.reply);
-
-            // 점수가 하락했고 힌트가 있다면 표시
-            if (data.score < lastScore && data.hint) {
-                showHint(data.hint);
+    if (isCompetitionMode) {
+        // 🏆 경진대회 모드 전송
+        try {
+            const res = await fetch(`${API_PREFIX}/competition/answer`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    user_id: currentUser,
+                    category: "실시간",
+                    age: userProfileAge,
+                    problem: currentProblem,
+                    answer: message,
+                    model_type: selectedModel,
+                    room_code: currentLiveRoomCode
+                })
+            });
+            const data = await res.json();
+            document.getElementById('typing-indicator').style.display = 'none';
+            if (data.feedback) {
+                addMessage('ai', `[채점 완료]\n점수: ${data.score}점\n\n${data.feedback}`);
+                updateScore(data.score);
+                if (data.is_correct) showToast("🏆 멋진 답변입니다!", "success");
             }
-
-            updateScore(data.score);
-            loadHistory();
-            if(data.is_finished) showToast("🎉 완벽히 이해했습니다!", "success");
+        } catch (e) {
+            document.getElementById('typing-indicator').style.display = 'none';
+            showToast("채점 중 오류가 발생했습니다.", "error");
         }
-    } catch (e) { document.getElementById('typing-indicator').style.display = 'none'; }
+    } else {
+        // 🎓 일반 AI 튜터 모드 전송
+        try {
+            const res = await fetch(`${API_PREFIX}/chat`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    user_id: currentUser,
+                    room_id: currentRoomId,
+                    category: document.getElementById('ai-category').value,
+                    topic: document.getElementById('chat-title').innerText,
+                    difficulty: parseInt(document.getElementById('ai-difficulty').value),
+                    age: userProfileAge,
+                    model_type: selectedModel,
+                    message: message
+                })
+            });
+            const data = await res.json();
+            document.getElementById('typing-indicator').style.display = 'none';
+            if (data.reply) {
+                currentRoomId = data.room_id;
+                addMessage('ai', data.reply);
+                if (data.score < lastScore && data.hint) showHint(data.hint);
+                updateScore(data.score);
+                loadHistory();
+
+                if (data.is_finished) {
+                    showToast("🎉 완벽히 이해했습니다!", "success");
+                    renderResults(data);
+                }
+            }
+        } catch (e) {
+            document.getElementById('typing-indicator').style.display = 'none';
+            showToast("메시지 전송 실패", "error");
+        }
+    }
 }
+
+// --- 결과 창 렌더링 로직 ---
+
+function renderResults(data) {
+    // 1. 부족한 개념 리스트
+    const weakPointsList = document.getElementById('weak-points-list');
+    weakPointsList.innerHTML = '';
+    if (data.weak_points && data.weak_points.length > 0) {
+        data.weak_points.forEach(point => {
+            const li = document.createElement('li');
+            li.innerText = point;
+            weakPointsList.appendChild(li);
+        });
+    } else {
+        weakPointsList.innerHTML = '<li>부족한 점이 없네요! 완벽합니다.</li>';
+    }
+
+    // 2. 유튜브 추천 링크
+    const youtubeList = document.getElementById('youtube-list');
+    youtubeList.innerHTML = '';
+    if (data.youtube_recommendations && data.youtube_recommendations.length > 0) {
+        data.youtube_recommendations.forEach(video => {
+            const a = document.createElement('a');
+            a.href = video.url;
+            a.target = "_blank";
+            a.style.display = "block";
+            a.style.padding = "10px";
+            a.style.background = "#f1f5f9";
+            a.style.borderRadius = "8px";
+            a.style.textDecoration = "none";
+            a.style.color = "#1e293b";
+            a.style.marginBottom = "5px";
+            a.style.fontSize = "0.9rem";
+            a.innerText = `📺 ${video.title}`;
+            youtubeList.appendChild(a);
+        });
+    }
+
+    // 3. 화면 전환
+    setTimeout(() => { showAuraScreen('results-aura'); }, 2000);
+}
+
+// --- 기타 유틸리티 (메시지 추가, 점수 업데이트 등) ---
 
 function addMessage(sender, text, forceScroll = false) {
     const chatContainer = document.getElementById('chat-container');
     const chatBox = document.getElementById('chat-box');
-    const isAtBottom = chatContainer.scrollHeight - chatContainer.scrollTop <= chatContainer.clientHeight + 50;
     const div = document.createElement('div');
     div.className = `msg ${sender}-msg`;
     div.innerText = text;
     chatBox.appendChild(div);
-
-    if (isAtBottom || forceScroll) {
-        chatContainer.scrollTo({ top: chatContainer.scrollHeight, behavior: 'smooth' });
-    }
+    if (forceScroll) chatContainer.scrollTo({ top: chatContainer.scrollHeight, behavior: 'smooth' });
 }
 
 function updateScore(score, silent = false) {
@@ -249,24 +306,16 @@ function updateScore(score, silent = false) {
     const gauge = document.getElementById('score-gauge');
     el.innerText = score;
     gauge.style.width = `${score}%`;
-
     if (!silent) {
-        if (score > lastScore) {
-            document.body.classList.remove('score-up', 'score-down');
-            void document.body.offsetWidth;
-            document.body.classList.add('score-up');
-            setTimeout(() => document.body.classList.remove('score-up'), 800);
-        } else if (score < lastScore) {
-            document.body.classList.remove('score-up', 'score-down');
-            void document.body.offsetWidth;
-            document.body.classList.add('score-down');
-            setTimeout(() => document.body.classList.remove('score-down'), 800);
+        const effect = score > lastScore ? 'score-up' : (score < lastScore ? 'score-down' : '');
+        if (effect) {
+            document.body.classList.add(effect);
+            setTimeout(() => document.body.classList.remove(effect), 800);
         }
     }
     lastScore = score;
 }
 
-// 💡 힌트 슬라이더 로직
 function showHint(text) {
     const slider = document.getElementById('hint-slider');
     const hintText = document.getElementById('hint-text');
@@ -276,72 +325,132 @@ function showHint(text) {
 
 function hideHint() {
     const slider = document.getElementById('hint-slider');
-    if(slider) slider.classList.remove('show');
+    if (slider) slider.classList.remove('show');
 }
 
-// 🏆 커뮤니티 연동 로직
+// --- 커뮤니티 & 랭킹 로직 ---
+
 async function loadCommunityPosts() {
     const list = document.getElementById('community-posts-list');
-    list.innerHTML = "<p style='color: #94a3b8;'>불러오는 중...</p>";
-
+    list.innerHTML = "<p>불러오는 중...</p>";
     try {
         const res = await fetch(`${API_PREFIX}/community`);
         const data = await res.json();
-        list.innerHTML = "";
-
-        if (data.posts && data.posts.length > 0) {
-            data.posts.forEach(post => {
-                const item = document.createElement('div');
-                item.style.padding = "10px";
-                item.style.borderBottom = "1px solid #f1f5f9";
-                item.innerHTML = `
-                    <div style="font-weight: 700; font-size: 0.9rem; color: var(--primary);">${post.user_id}</div>
-                    <div style="font-size: 0.95rem; margin: 4px 0;">${post.content}</div>
-                    <div style="font-size: 0.8rem; color: #94a3b8;">이해도: ${post.score}%</div>
-                `;
-                list.appendChild(item);
-            });
-        } else {
-            list.innerHTML = "<p style='color: #94a3b8;'>게시글이 없습니다.</p>";
-        }
-    } catch (e) {
-        list.innerHTML = "<p style='color: #e74c3c;'>불러오지 못했습니다.</p>";
-    }
+        list.innerHTML = data.posts.map(p => `
+            <div style="padding: 10px; border-bottom: 1px solid #eee;">
+                <div style="font-weight: 700;">${p.user_id}</div>
+                <div>${p.content}</div>
+                <div style="font-size: 0.8rem; color: #94a3b8;">이해도: ${p.score}%</div>
+            </div>
+        `).join('') || "<p>게시글이 없습니다.</p>";
+    } catch (e) { list.innerHTML = "<p>오류 발생</p>"; }
 }
 
 async function writeCommunityPost() {
-    const postInput = document.getElementById('community-post-input');
-    const content = postInput.value.trim();
+    const content = document.getElementById('community-post-input').value.trim();
     const currentScore = parseInt(document.getElementById('current-score').innerText);
-
-    if (!content) {
-        return showToast("자랑할 내용을 입력해주세요!", "error");
-    }
-
-    try {
-        const res = await fetch(`${API_PREFIX}/community`, {
-            method: "POST",
-            headers: {"Content-Type": "application/json"},
-            body: JSON.stringify({
-                user_id: currentUser,
-                content: content,
-                score: currentScore
-            })
-        });
-
-        if (res.ok) {
-            showToast("자랑글이 등록되었습니다!", "success");
-            postInput.value = "";
-            loadCommunityPosts();
-        } else {
-            showToast("글쓰기에 실패했습니다.", "error");
-        }
-    } catch (e) {
-        console.error("Community post failed", e);
-        showToast("서버 오류로 글쓰기에 실패했습니다.", "error");
+    if (!content) return showToast("내용을 입력하세요.", "error");
+    const res = await fetch(`${API_PREFIX}/community`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_id: currentUser, content, score: currentScore })
+    });
+    if (res.ok) {
+        showToast("등록되었습니다!", "success");
+        document.getElementById('community-post-input').value = "";
+        loadCommunityPosts();
     }
 }
 
+async function loadRankings(category) {
+    const list = document.getElementById('ranking-list');
+    list.innerHTML = `<p style="text-align: center; padding: 20px;">${category} 랭킹 로드 중...</p>`;
+    try {
+        const res = await fetch(`${API_PREFIX}/ranking/${category}`);
+        const data = await res.json();
+        list.innerHTML = data.map((p, idx) => `
+            <div style="padding: 12px 20px; display: flex; justify-content: space-between; border-bottom: 1px solid #f1f5f9; ${p.user_id === currentUser ? 'background:#eff6ff;' : ''}">
+                <div style="font-weight: 700;">${idx < 3 ? ['🥇','🥈','🥉'][idx] : idx+1} ${p.user_id}</div>
+                <div style="color: var(--primary); font-weight: 800;">${p.score}점</div>
+            </div>
+        `).join('') || `<p style="text-align: center; padding: 20px;">기록이 없습니다.</p>`;
+    } catch (e) { list.innerHTML = "<p>로드 실패</p>"; }
+}
+
+// --- 경진대회 방 관리 ---
+
+async function createLiveCompetition() {
+    const topic = document.getElementById('live-comp-topic').value.trim();
+    if (!topic) return showToast("주제를 입력하세요!", "error");
+    const res = await fetch(`${API_PREFIX}/competition/create`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            host_id: currentUser,
+            category: document.getElementById('live-comp-category').value,
+            topic: topic,
+            age: parseInt(document.getElementById('live-comp-age').value) || userProfileAge
+        })
+    });
+    const data = await res.json();
+    if (data.room_code) {
+        currentLiveRoomCode = data.room_code;
+        isHost = true;
+        enterLobby(data.room_code);
+    }
+}
+
+async function joinLiveCompetition() {
+    const code = document.getElementById('live-comp-code').value.trim();
+    if (code.length !== 6) return showToast("6자리 코드를 입력하세요.", "error");
+    const res = await fetch(`${API_PREFIX}/competition/join`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_id: currentUser, room_code: code })
+    });
+    if (res.ok) {
+        currentLiveRoomCode = code;
+        isHost = false;
+        enterLobby(code);
+    } else {
+        const err = await res.json();
+        showToast(err.detail || "참가 실패", "error");
+    }
+}
+
+function enterLobby(code) {
+    document.getElementById('lobby-code-display').innerText = code;
+    document.getElementById('host-controls').style.display = isHost ? 'block' : 'none';
+    document.getElementById('guest-waiting').style.display = isHost ? 'none' : 'block';
+    showAuraScreen('comp-lobby-aura');
+    if (liveStatusInterval) clearInterval(liveStatusInterval);
+    liveStatusInterval = setInterval(updateLiveStatus, 2000);
+}
+
+async function updateLiveStatus() {
+    if (!currentLiveRoomCode) return;
+    const res = await fetch(`${API_PREFIX}/competition/status/${currentLiveRoomCode}`);
+    const data = await res.json();
+    document.getElementById('participant-count').innerText = data.participants.length;
+    document.getElementById('lobby-participant-list').innerHTML = data.participants.map(p => `
+        <div style="padding:8px; border-bottom:1px solid #eee;">${p.user_id} - ${p.is_submitted ? '완료' : '준비 중'}</div>
+    `).join('');
+    if (data.status === 'ongoing' && !isCompetitionMode) {
+        isCompetitionMode = true;
+        currentProblem = data.problem;
+        showChatUI();
+        addMessage('ai', `[실시간 대회 시작!]\n\n${data.problem}`);
+        if (data.hint) showHint(data.hint);
+    }
+}
+
+async function startLiveCompetition() {
+    if (!isHost) return;
+    await fetch(`${API_PREFIX}/competition/start_live/${currentLiveRoomCode}`, { method: "POST" });
+}
+
+// 초기화
 if (currentUser) {
     fetchUserProfile();
+    loadHistory();
 }

@@ -154,7 +154,7 @@ input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 20p
 .chat-container { flex: 1; display: flex; flex-direction: column; max-width: 900px; margin: 0 auto; width: 100%; padding: 0 20px; overflow-y: auto; position: relative; }
 .chat-header { position: sticky; top: 0; background: white; padding: 25px 0 15px 0; z-index: 50; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #f8fafc; }
 .chat-box { display: flex; flex-direction: column; gap: 25px; padding: 30px 0 120px 0; }
-.msg { max-width: 80%; font-size: 1rem; line-height: 1.6; padding: 16px 20px; border-radius: 20px; }
+.msg { max-width: 80%; font-size: 1rem; line-height: 1.6; padding: 16px 20px; border-radius: 20px; white-space: pre-wrap; }
 .ai-msg { align-self: flex-start; background: #f1f5f9; color: #1e293b; border-bottom-left-radius: 4px; }
 .user-msg { align-self: flex-end; background: var(--primary); color: white; border-bottom-right-radius: 4px; box-shadow: 0 4px 15px rgba(74, 144, 226, 0.2); }
 

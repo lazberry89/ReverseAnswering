@@ -10,7 +10,6 @@
 <body>
     <div class="toast-container"></div>
 
-    <!-- 📱 사이드바 -->
     <div class="sidebar">
         <div class="new-chat-btn" onclick="location.reload()">+ 새로운 대화</div>
         <div style="font-size: 0.75rem; color: #64748b; margin-bottom: 12px; padding-left: 10px; font-weight: 700; letter-spacing: 0.5px;">최근 기록</div>
@@ -25,12 +24,10 @@
         </div>
     </div>
 
-    <!-- 🖼️ 메인 컨텐츠 영역 -->
     <div class="main-content">
 
         <div id="aura-wrapper" class="aura-wrapper">
 
-            <!-- 👤 프로필 설정 -->
             <div id="profile-aura" class="aura-container" style="display: none;">
                 <div class="screen" style="text-align: center;">
                     <h2 style="font-weight: 800; color: var(--primary);">👤 프로필 설정</h2>
@@ -48,17 +45,112 @@
                 </div>
             </div>
 
-            <!-- 🏠 메인 메뉴 화면 -->
             <div id="main-menu-aura" class="aura-container" style="display: block;">
                 <div class="screen" style="text-align: center;">
                     <h2 style="font-weight: 800; color: var(--primary);">메인 메뉴</h2>
                     <p style="color: #64748b; margin-bottom: 25px;">어떤 기능을 사용하시겠어요?</p>
                     <button onclick="showAuraScreen('ai-setup-aura')">🎓 AI 튜터 시작하기</button>
-                    <button onclick="showAuraScreen('community-aura')" class="btn-sub" style="margin-top: 10px;">🏆 자랑용 커뮤니티 보기</button>
+                    <button onclick="showAuraScreen('competition-setup-aura')" style="margin-top: 10px; background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);">🏆 AI 경진대회 도전하기</button>
+
+                    <button onclick="showAuraScreen('analysis-aura')" style="margin-top: 10px; background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);">🔍 맞춤형 학생 분석 보고서</button>
+
+                    <div style="display: flex; gap: 10px; margin-top: 10px;">
+                        <button onclick="showAuraScreen('ranking-aura')" class="btn-sub" style="flex:1; margin:0;">📊 과목 랭킹</button>
+                        <button onclick="showAuraScreen('community-aura')" class="btn-sub" style="flex:1; margin:0;">✨ 커뮤니티</button>
+                    </div>
                 </div>
             </div>
 
-            <!-- 🎓 학습 주제 설정 -->
+            <div id="ranking-aura" class="aura-container" style="display: none;">
+                <div class="screen" style="text-align: center;">
+                    <h2 style="font-weight: 800; color: var(--primary);">📊 실시간 과목 랭킹</h2>
+                    <p style="color: #64748b; margin-bottom: 20px;">과목별 최고의 튜티는 누구일까요?</p>
+
+                    <div style="display: flex; gap: 5px; margin-bottom: 20px; flex-wrap: wrap;">
+                        <button onclick="loadRankings('국어')" style="flex:1; padding: 10px; font-size: 0.8rem; background: #f1f5f9; color: #334155; margin:0;">국어</button>
+                        <button onclick="loadRankings('수학')" style="flex:1; padding: 10px; font-size: 0.8rem; background: #f1f5f9; color: #334155; margin:0;">수학</button>
+                        <button onclick="loadRankings('과학')" style="flex:1; padding: 10px; font-size: 0.8rem; background: #f1f5f9; color: #334155; margin:0;">과학</button>
+                        <button onclick="loadRankings('영어')" style="flex:1; padding: 10px; font-size: 0.8rem; background: #f1f5f9; color: #334155; margin:0;">영어</button>
+                    </div>
+
+                    <div id="ranking-list" style="text-align: left; max-height: 250px; overflow-y: auto; background: #f8fafc; border-radius: 15px; border: 1px solid #eee;">
+                        <p style="text-align: center; color: #94a3b8; padding: 20px;">과목을 선택하세요.</p>
+                    </div>
+
+                    <button onclick="showAuraScreen('main-menu-aura')" class="btn-sub" style="margin-top: 20px;">메인 메뉴로 돌아가기</button>
+                </div>
+            </div>
+
+            <div id="competition-setup-aura" class="aura-container" style="display: none;">
+                <div class="screen" style="text-align: center;">
+                    <h2 style="color: #d97706;">🏆 AI 경진대회</h2>
+                    <p>친구들과 실시간으로 대결해보세요!</p>
+                    <div style="display: flex; gap: 10px; margin-bottom: 20px;">
+                        <button onclick="showAuraScreen('comp-create-aura')" style="flex:1; padding: 12px; font-size: 0.9rem;">방 만들기</button>
+                        <button onclick="showAuraScreen('comp-join-aura')" style="flex:1; padding: 12px; font-size: 0.9rem;" class="btn-sub">코드 입력</button>
+                    </div>
+                    <button onclick="showAuraScreen('main-menu-aura')" class="btn-sub">메인 메뉴로 돌아가기</button>
+                </div>
+            </div>
+
+            <div id="comp-create-aura" class="aura-container" style="display: none;">
+                <div class="screen" style="text-align: center;">
+                    <h2 style="color: #d97706;">🏠 대회 방 만들기</h2>
+                    <div class="input-wrap">
+                        <label>과목</label>
+                        <select id="live-comp-category">
+                            <option>국어</option><option>수학</option><option>과학</option><option>영어</option>
+                        </select>
+                    </div>
+                    <div class="input-wrap">
+                        <label>주제</label>
+                        <input type="text" id="live-comp-topic" placeholder="예: 광합성, 인수분해">
+                    </div>
+                    <div class="input-wrap">
+                        <label>대상 나이 (직접 설정 가능)</label>
+                        <input type="number" id="live-comp-age" placeholder="예: 18">
+                    </div>
+                    <button onclick="createLiveCompetition()">방 생성하기 🚀</button>
+                    <button onclick="showAuraScreen('competition-setup-aura')" class="btn-sub" style="margin-top: 10px;">뒤로 가기</button>
+                </div>
+            </div>
+
+            <div id="comp-join-aura" class="aura-container" style="display: none;">
+                <div class="screen" style="text-align: center;">
+                    <h2 style="color: #d97706;">🔑 참가 코드 입력</h2>
+                    <p>6자리 참가 코드를 입력하세요.</p>
+                    <div class="input-wrap">
+                        <input type="text" id="live-comp-code" placeholder="예: 123456" maxlength="6" style="text-align: center; font-size: 1.5rem; letter-spacing: 5px;">
+                    </div>
+                    <button onclick="joinLiveCompetition()">대회 참가하기 🚩</button>
+                    <button onclick="showAuraScreen('competition-setup-aura')" class="btn-sub" style="margin-top: 10px;">뒤로 가기</button>
+                </div>
+            </div>
+
+            <div id="comp-lobby-aura" class="aura-container" style="display: none;">
+                <div class="screen" style="text-align: center;">
+                    <h2 id="lobby-title" style="color: #d97706; margin-bottom: 5px;">대기실</h2>
+                    <div style="background: #fff3cd; padding: 10px; border-radius: 10px; font-weight: 800; font-size: 1.2rem; margin-bottom: 20px;">
+                        코드: <span id="lobby-code-display" style="color: #856404;">------</span>
+                    </div>
+
+                    <div style="text-align: left; margin-bottom: 15px;">
+                        <label>참가자 현황 (<span id="participant-count">0</span>명)</label>
+                        <div id="lobby-participant-list" style="max-height: 200px; overflow-y: auto; background: #f8fafc; border-radius: 10px; padding: 10px; border: 1px solid #eee;">
+                            </div>
+                    </div>
+
+                    <div id="host-controls" style="display: none;">
+                        <button onclick="startLiveCompetition()" style="background: #d97706;">대회 시작하기 (호스트)</button>
+                        <p style="font-size: 0.8rem; color: #64748b; margin-top: 8px;">호스트가 시작하면 모든 참가자에게 문제가 나타납니다.</p>
+                    </div>
+                    <div id="guest-waiting" style="display: block;">
+                        <p style="color: var(--primary); font-weight: 700; animation: pulse 1.5s infinite;">호스트가 대회를 시작하기를 기다리는 중...</p>
+                    </div>
+                    <button onclick="leaveCompetition()" class="btn-sub" style="margin-top: 15px;">방 나가기</button>
+                </div>
+            </div>
+
             <div id="ai-setup-aura" class="aura-container" style="display: none;">
                 <div class="screen" style="text-align: center;">
                     <h2>🎓 학습 시작</h2>
@@ -90,7 +182,6 @@
                 </div>
             </div>
 
-            <!-- 🏆 커뮤니티 화면 -->
             <div id="community-aura" class="aura-container" style="display: none;">
                 <div class="screen" style="text-align: center;">
                     <h2 style="font-weight: 800; color: var(--primary);">🏆 자랑 게시판</h2>
@@ -109,7 +200,6 @@
                 </div>
             </div>
 
-            <!-- 📊 학습 결과 화면 (새로 추가) -->
             <div id="results-aura" class="aura-container" style="display: none;">
                 <div class="screen" style="text-align: center;">
                     <h2 style="font-weight: 800; color: var(--success);">🎉 학습 완료!</h2>
@@ -118,24 +208,34 @@
                     <div style="text-align: left; background: #f0fdf4; padding: 20px; border-radius: 20px; margin-bottom: 20px; border: 1px solid #dcfce7;">
                         <h3 style="font-size: 1rem; color: #166534; margin-top: 0;">🤔 보완하면 좋은 점</h3>
                         <ul id="weak-points-list" style="font-size: 0.9rem; color: #166534; padding-left: 20px; margin-bottom: 0;">
-                            <!-- Weak points will be loaded here -->
-                        </ul>
+                            </ul>
                     </div>
 
                     <div style="text-align: left; background: #fff; padding: 20px; border-radius: 20px; border: 1px solid #eee;">
                         <h3 style="font-size: 1rem; color: #1e293b; margin-top: 0;">📺 추천 강의 영상</h3>
                         <div id="youtube-list" style="display: flex; flex-direction: column; gap: 10px;">
-                            <!-- YouTube links will be loaded here -->
-                        </div>
+                            </div>
                     </div>
 
                     <button onclick="showAuraScreen('main-menu-aura')" style="margin-top: 25px;">메인 메뉴로 가기</button>
                 </div>
             </div>
 
+            <div id="analysis-aura" class="aura-container" style="display: none;">
+                <div class="screen" style="text-align: center;">
+                    <h2 style="font-weight: 800; color: #4f46e5;">🔍 맞춤형 학생 분석</h2>
+                    <p style="color: #64748b; margin-bottom: 20px;">AI가 분석한 나의 학습 강점과 약점입니다.</p>
+
+                    <div id="analysis-content-list" style="text-align: left; max-height: 350px; overflow-y: auto; display: flex; flex-direction: column; gap: 15px; padding: 5px;">
+                        <p style="text-align: center; color: #94a3b8; padding: 20px;">분석 데이터를 불러오는 중...</p>
+                    </div>
+
+                    <button onclick="showAuraScreen('main-menu-aura')" class="btn-sub" style="margin-top: 20px;">메인 메뉴로 돌아가기</button>
+                </div>
+            </div>
+
         </div>
 
-        <!-- 💬 채팅 UI -->
         <div id="chat-ui" style="display: none; height: 100%; width: 100%; flex-direction: column;">
             <div id="chat-container" class="chat-container">
                 <div class="chat-header">
@@ -176,7 +276,6 @@
 
     </div>
 
-    <!-- 🖼️ 커스텀 확인 모달 -->
     <div id="confirm-modal" class="modal-overlay">
         <div class="modal-content">
             <h3 style="margin-top: 0; color: #1e293b;">정말 삭제할까요?</h3>
@@ -196,6 +295,85 @@
             showAuraScreen('main-menu-aura');
             loadHistory();
         }
+
+        /**
+         * 🔍 학생 분석 보고서 데이터를 서버에서 불러와 렌더링하는 함수
+         */
+        async function loadStudentAnalysis() {
+            const listContainer = document.getElementById('analysis-content-list');
+            listContainer.innerHTML = "<p style='text-align: center; color: #94a3b8; padding: 20px;'>분석 데이터를 불러오는 중...</p>";
+
+            try {
+                // 백엔드의 /api/analysis/all 엔드포인트 호출
+                const res = await fetch('/api/analysis/all');
+                const data = await res.json();
+
+                // 현재 로그인한 유저의 데이터만 필터링 (필요 시)
+                const myAnalysis = data.analysis.filter(a => a.user_id === localStorage.getItem("user_id"));
+
+                if (myAnalysis.length === 0) {
+                    listContainer.innerHTML = "<p style='text-align: center; color: #94a3b8; padding: 20px;'>아직 분석된 학습 데이터가 없습니다.<br>학습을 먼저 진행해주세요!</p>";
+                    return;
+                }
+
+                listContainer.innerHTML = ""; // 초기화
+                myAnalysis.forEach(item => {
+                    const card = document.createElement('div');
+                    card.style.background = "white";
+                    card.style.padding = "15px";
+                    card.style.borderRadius = "15px";
+                    card.style.border = "1px solid #e2e8f0";
+                    card.style.boxShadow = "0 2px 4px rgba(0,0,0,0.02)";
+
+                    card.innerHTML = `
+                        <div style="font-weight: 800; color: #4f46e5; margin-bottom: 10px; font-size: 1rem; border-bottom: 1px solid #f1f5f9; padding-bottom: 5px;">
+                            📚 주제: ${item.topic}
+                        </div>
+                        <div style="margin-bottom: 8px;">
+                            <strong style="color: #059669; font-size: 0.85rem;">💪 강점:</strong>
+                            <p style="margin: 2px 0 0 0; font-size: 0.9rem; color: #334155;">${item.strengths || '기록 없음'}</p>
+                        </div>
+                        <div style="margin-bottom: 8px;">
+                            <strong style="color: #dc2626; font-size: 0.85rem;">⚠️ 약점:</strong>
+                            <p style="margin: 2px 0 0 0; font-size: 0.9rem; color: #334155;">${item.weaknesses || '기록 없음'}</p>
+                        </div>
+                        <div>
+                            <strong style="color: #2563eb; font-size: 0.85rem;">🧠 학습 성향:</strong>
+                            <p style="margin: 2px 0 0 0; font-size: 0.9rem; color: #334155;">${item.learning_traits || '기록 없음'}</p>
+                        </div>
+                        <div style="text-align: right; font-size: 0.7rem; color: #94a3b8; margin-top: 10px;">
+                            최근 업데이트: ${new Date(item.updated_at).toLocaleString()}
+                        </div>
+                    `;
+                    listContainer.appendChild(card);
+                });
+            } catch (e) {
+                console.error(e);
+                listContainer.innerHTML = "<p style='text-align: center; color: #dc2626; padding: 20px;'>데이터를 불러오지 못했습니다.</p>";
+            }
+        }
+
+        // 기존 showAuraScreen 함수가 script.js에 있겠지만,
+        // 여기서 가로채거나 script.js 내부 로직에 loadStudentAnalysis() 호출을 추가해야 합니다.
+        // 아래는 편의를 위해 HTML 내에서 showAuraScreen을 확장하는 예시입니다.
+        const originalShowAuraScreen = window.showAuraScreen;
+        window.showAuraScreen = function(id) {
+            if (typeof originalShowAuraScreen === 'function') {
+                originalShowAuraScreen(id);
+            } else {
+                // script.js 로드 전이거나 없을 경우를 대비한 기본 동작
+                document.getElementById('aura-wrapper').style.display = 'flex';
+                document.getElementById('chat-ui').style.display = 'none';
+                document.querySelectorAll('.aura-container').forEach(c => c.style.display = 'none');
+                const target = document.getElementById(id);
+                if(target) target.style.display = 'block';
+            }
+
+            // 분석 화면일 때 데이터 로드 실행
+            if (id === 'analysis-aura') {
+                loadStudentAnalysis();
+            }
+        };
     </script>
 </body>
 </html>
