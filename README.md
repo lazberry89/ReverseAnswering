@@ -35,7 +35,7 @@ Groq: Llama-3.3-70b (빠른 반응 속도)
 
 Gemini: Gemini-2.5-flash (멀티모달 및 지능형 분석)
 
-OpenRouter: GPT-OSS-120b (고성능 모델 활용)
+OpenRouter: GPT-OSS-120b (고성능 모델 활용) - 기존 드랍메뉴에 groq이 기본으로 설정되어있는데,드랍메뉴를 사용하여 openrouter를 사용해보세요!
 
 Server: Uvicorn
 
